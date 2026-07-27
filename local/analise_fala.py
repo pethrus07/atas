@@ -215,9 +215,60 @@ h2{{font-family:'Space Grotesk';font-size:16px;margin:32px 0 12px}}
 </div></body></html>"""
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Alimenta o segundo cérebro (Sinapse): escreve uma nota AUTO-gerada de Fala no
+# vault a cada reunião → aba Crescimento Pessoal. A narrativa/metas ficam na nota
+# escrita à mão (fala-e-apresentacao); esta é só o retrato de dados, sobrescrevível.
+def _nota_vault_md(linhas):
+    ult = linhas[-1]["metrics"] if linhas else {}
+    def _row(r):
+        m = r["metrics"]
+        top = ", ".join(list(m["muletas"])[:3]) or "—"
+        titulo = str(r["titulo"]).replace("|", "/")
+        return (f"| {r['data']} | {titulo} | {m['dur_min']} | {m['share_fala']*100:.0f}% "
+                f"| {m['conf_por_min']} | {m['muletas_por_1000']} | {top} |")
+    tab = "\n".join(_row(r) for r in linhas[-8:])
+    return "\n".join([
+        "---", "tipo: nota", "area: crescimento",
+        "tags: [comunicacao, fala, raio-x, auto-gerado]", "status: em-progresso",
+        f"atualizado: {linhas[-1]['data'] if linhas else ''}", "---", "",
+        "# 📈 Raio-X da Fala (auto)", "",
+        "> ⚙️ **Nota auto-gerada** pelo sistema [[atas]] a cada reunião — não editar à mão. "
+        "A narrativa e as metas ficam em [[fala-e-apresentacao]]. Dado pessoal, nunca vai ao cliente.", "",
+        "## Agora",
+        f"- Fatia de fala: **{ult.get('share_fala', 0)*100:.0f}%** (meta ~50%)",
+        f"- Confirmações/min: **{ult.get('conf_por_min', 0)}** (menor = melhor)",
+        f"- Muletas / 1000 palavras: **{ult.get('muletas_por_1000', 0)}**",
+        f"- Reuniões monitoradas: **{len(linhas)}**", "",
+        "## Reunião a reunião (últimas)",
+        "| Data | Reunião | Min | Fala | Conf/min | Mul/1k | Top muletas |",
+        "|---|---|---|---|---|---|---|", tab, "",
+        "## Conexões",
+        "- Narrativa e metas: [[fala-e-apresentacao]]",
+        "- Ferramenta: [[atas]]", "- Aba: [[MOC-crescimento]]", "",
+    ])
+
+
+def _atualizar_vault(linhas):
+    """Best-effort: grava a nota de Fala no vault do Sinapse, se ele existir.
+    Vault = env SINAPSE_VAULT, senão ../../sinapse (irmão de atas). Nunca lança."""
+    import os
+    base = os.environ.get("SINAPSE_VAULT")
+    vault = pathlib.Path(base) if base else pathlib.Path(__file__).parents[2] / "sinapse"
+    destino = vault / "08-CRESCIMENTO"
+    try:
+        if not destino.exists():
+            return None  # vault ausente nesta máquina → silencioso
+        p = destino / "fala-raio-x.md"
+        p.write_text(_nota_vault_md(linhas), encoding="utf-8")
+        return p
+    except Exception:
+        return None
+
+
 def processar(segments, titulo, quando, pasta=None):
-    """Analisa, salva relatório .md, atualiza histórico e regenera o painel.
-    Retorna {"md":Path, "dashboard":Path} (ou None em campos que falharem)."""
+    """Analisa, salva relatório .md, atualiza histórico, regenera o painel e
+    alimenta o Sinapse. Retorna os caminhos gerados (None nos que falharem)."""
     pasta = pathlib.Path(pasta) if pasta else FALA_DIR
     pasta.mkdir(exist_ok=True)
     metrics = analisar(segments)
@@ -228,4 +279,5 @@ def processar(segments, titulo, quando, pasta=None):
     md = _relatorio_md(reg, pasta)
     dash = pasta / "raio-x.html"
     dash.write_text(_dashboard(linhas, pasta), encoding="utf-8")
-    return {"md": md, "dashboard": dash, "metrics": metrics}
+    vault = _atualizar_vault(linhas)  # alimenta a aba Crescimento Pessoal (best-effort)
+    return {"md": md, "dashboard": dash, "metrics": metrics, "vault": vault}
