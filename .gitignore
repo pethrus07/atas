@@ -1,0 +1,17 @@
+# Segredos e config local
+local/config.json
+
+# Áudio transitório e backups locais de reuniões (dados de cliente / LGPD)
+local/out/
+atas-salvas/
+
+# Raio-x da fala — análise pessoal/interna (nunca publicar)
+fala-analise/
+
+# Node / wrangler
+worker/node_modules/
+worker/.wrangler/
+
+# Python cache
+__pycache__/
+*.pyc

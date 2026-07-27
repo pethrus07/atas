@@ -1,0 +1,13 @@
+name = "atas"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+# Workers AI — usado para gerar o resumo/ata
+[ai]
+binding = "AI"
+
+# D1 — guarda cada reunião (id, título, data, transcrição, resumo)
+[[d1_databases]]
+binding = "DB"
+database_name = "atas"
+database_id = "a89037d1-3d28-410c-9e4b-195fc834a8eb"
