@@ -48,17 +48,96 @@ def _rms(mono_f32):
     return float(np.sqrt(np.mean(np.square(mono_f32)))) if mono_f32.size else 0.0
 
 
-def capturar(mic_wav, loop_wav):
+def _abre(dispositivo):
+    """Tenta abrir o dispositivo de verdade e ler um bloco.
+
+    Existe porque o `soundcard` só falha na HORA DE ABRIR, não ao listar: ele
+    exige que o mix format do device seja EXTENSIBLE e faz isso com um
+    `assert` seco —
+
+        assert ppMixFormat[0][0].Format.wFormatTag == 0xFFFE
+
+    Um `AssertionError` sem mensagem, dentro de uma thread, com o .bat
+    fechando a janela em seguida: o gravador simplesmente não abria, e não
+    sobrava nada na tela para explicar. Foi o que aconteceu em 03/09/2026 com
+    o `Microphone (AB13X USB Audio)`, que tinha virado o microfone padrão.
+    """
+    try:
+        with dispositivo.recorder(samplerate=SR) as r:
+            r.record(numframes=BLOCK)
+        return True
+    except Exception:
+        return False
+
+
+def _escolher_mic(preferido=None):
+    """Primeiro microfone que ABRE, não o primeiro que existe.
+
+    Ordem: o que o config pedir, depois o padrão do Windows, depois os demais.
+    Devolve (microfone, aviso) — o aviso é dito em voz alta na tela, porque
+    gravar com um microfone que não é o que a pessoa acha que é dá uma ata
+    com a sua voz baixa e nenhum sinal de que algo mudou.
+    """
+    candidatos, vistos = [], set()
+
+    def juntar(d):
+        if d is not None and d.name not in vistos:
+            vistos.add(d.name)
+            candidatos.append(d)
+
+    if preferido:
+        for m in sc.all_microphones(include_loopback=False):
+            if preferido.lower() in m.name.lower():
+                juntar(m)
+    try:
+        juntar(sc.default_microphone())
+    except Exception:
+        pass
+    for m in sc.all_microphones(include_loopback=False):
+        juntar(m)
+
+    if not candidatos:
+        raise RuntimeError("Nenhum microfone encontrado no Windows.")
+
+    padrao = candidatos[0].name
+    for m in candidatos:
+        if _abre(m):
+            aviso = None
+            if m.name != padrao:
+                aviso = (f"o dispositivo padrão ({padrao}) não abre neste driver; "
+                         f"gravando por {m.name}")
+            return m, aviso
+    raise RuntimeError(
+        "Nenhum microfone do sistema pôde ser aberto. Todos falharam ao iniciar a captura.")
+
+
+def capturar(mic_wav, loop_wav, mic_preferido=None):
     """
     Grava até o usuário apertar ENTER (ou Ctrl+C).
     Escreve mic_wav e loop_wav. Devolve um dict com diagnóstico (duração/RMS).
     """
-    mic = sc.default_microphone()
+    mic, aviso_mic = _escolher_mic(mic_preferido)
+
+    # o loopback pode falhar pelo mesmo motivo do microfone; se falhar, vale
+    # mais gravar só a sua voz do que não gravar reunião nenhuma
     spk = sc.default_speaker()
-    loop = sc.get_microphone(spk.name, include_loopback=True)
+    loop, aviso_loop = sc.get_microphone(spk.name, include_loopback=True), None
+    if not _abre(loop):
+        alternativas = [m for m in sc.all_microphones(include_loopback=True)
+                        if m.isloopback and m.name != loop.name]
+        loop = next((m for m in alternativas if _abre(m)), None)
+        if loop is None:
+            raise RuntimeError(
+                f"O loopback de '{spk.name}' não abre e não há outro disponível.")
+        aviso_loop = (f"o loopback da saída padrão ({spk.name}) não abre; "
+                      f"capturando de {loop.name} — confira se a chamada toca AÍ")
 
     print(f"  Microfone : {mic.name}")
-    print(f"  Sistema   : {spk.name}  (loopback)")
+    if aviso_mic:
+        print(f"  ⚠  {aviso_mic}")
+    print(f"  Sistema   : {loop.name}  (loopback)")
+    if aviso_loop:
+        print(f"  ⚠  {aviso_loop}")
     print()
     print("  >>> Se o áudio da chamada NÃO sair por esse alto-falante,")
     print("      troque a saída do Windows para ele antes de continuar.")
@@ -79,6 +158,10 @@ def capturar(mic_wav, loop_wav):
         input(">>> GRAVANDO... aperte ENTER para parar.\n")
     except KeyboardInterrupt:
         print("\n(parando...)")
+    except EOFError:
+        # sem console interativo (execução agendada, pipe): não dá para
+        # esperar ENTER. Melhor parar limpo do que estourar e perder o áudio.
+        print("(sem terminal interativo — encerrando a captura)")
     parar.set()
     t_mic.join()
     t_loop.join()

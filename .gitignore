@@ -8,6 +8,9 @@ atas-salvas/
 # Raio-x da fala — análise pessoal/interna (nunca publicar)
 fala-analise/
 
+# Modelos de diarização (ONNX, ~35MB, rebaixáveis dos releases do sherpa-onnx)
+local/models/
+
 # Node / wrangler
 worker/node_modules/
 worker/.wrangler/

@@ -104,7 +104,9 @@ async function resumir(env, transcricao) {
     "Seja fiel ao conteúdo e NÃO invente fatos, mas seja específico e concreto: capture nomes, números, " +
     "valores, prazos, produtos e argumentos realmente ditos. Evite generalidades vagas. Responda SOMENTE com JSON válido.";
   const user =
-    'Analise a reunião abaixo. Distinga "Você" (o consultor / RYZE) de "Participante" (cliente).\n\n' +
+    'Analise a reunião abaixo. "Você" é o consultor (RYZE); os demais são o(s) cliente(s), ' +
+    'que podem aparecer como "Participante" ou, quando há vários, "Participante 1", "Participante 2" etc. ' +
+    "Quando alguém disser o próprio nome ou for chamado pelo nome, use o nome real na atribuição.\n\n" +
     "Preencha os campos:\n" +
     "- contexto: 1-2 frases sobre o objetivo/assunto da reunião e quem participou (se identificável).\n" +
     "- resumo_executivo: 5 a 8 frases, densas e informativas — o que foi discutido, os encaminhamentos e o porquê.\n" +

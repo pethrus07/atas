@@ -87,7 +87,7 @@ def main():
     print("\n  Lembrete: avise/peça consentimento para gravar. (LGPD)\n")
 
     try:
-        diag = record.capturar(mic_wav, loop_wav)
+        diag = record.capturar(mic_wav, loop_wav, cfg.get("microfone"))
         if diag["dur_mic"] < 1 and diag["dur_loop"] < 1:
             print("\n  Gravação vazia. Nada a fazer.")
             return
@@ -97,7 +97,13 @@ def main():
             titulo = f"Reunião {time.strftime('%d/%m/%Y %H:%M')}"
 
         print("\n  Transcrevendo (offline, pode levar alguns minutos)...")
-        segments = transcribe.transcrever(mic_wav, loop_wav, cfg.get("model", "small"))
+        diar = {
+            "enabled": cfg.get("diarizar", True),
+            "threshold": cfg.get("diar_threshold", 0.5),
+            "num_speakers": cfg.get("diar_num_speakers", -1),
+            "python": cfg.get("diar_python"),
+        }
+        segments = transcribe.transcrever(mic_wav, loop_wav, cfg.get("model", "small"), diar)
         if not segments:
             print("  Nenhuma fala reconhecida. Backup salvo mesmo assim.")
 

@@ -1,5 +1,10 @@
 {
   "worker_url": "https://atas.desbravando-utv.workers.dev",
   "upload_token": "COLE_AQUI_O_MESMO_TOKEN_DO_wrangler_secret",
-  "model": "small"
+  "model": "small",
+
+  "_diarizacao": "Separa participantes remotos (loopback) em 'Participante 1/2/3'. Opcional.",
+  "diarizar": true,
+  "diar_threshold": 0.5,
+  "diar_num_speakers": -1
 }
