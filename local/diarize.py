@@ -43,10 +43,19 @@ def diarizar(caminho, threshold=0.5, num_speakers=-1):
             pyannote=sherpa_onnx.OfflineSpeakerSegmentationPyannoteModelConfig(model=str(SEG)),
         ),
         embedding=sherpa_onnx.SpeakerEmbeddingExtractorConfig(model=str(EMB)),
+        # O agrupamento é o parâmetro sensível do sistema inteiro. `threshold` é a
+        # distância máxima para dois trechos serem a MESMA pessoa: quanto menor,
+        # mais locutores o sistema inventa. Voz que passou por codec de chamada e
+        # saiu pelo loopback varia muito, então 0.5 fatia demais — em 08/09/2026
+        # rendeu 78 "participantes" para uma pessoa só. Se você sabe quantos eram,
+        # cravar num_speakers é mais confiável: com um inteiro >= 1 o threshold
+        # nem é consultado. Ambos vêm do config.json (diar_threshold/diar_num_speakers).
         clustering=sherpa_onnx.FastClusteringConfig(
             num_clusters=int(num_speakers),   # -1 = descobrir sozinho (usa threshold)
             threshold=float(threshold),       # maior = menos locutores
         ),
+        # Descartam fala curta e pausa curta demais: sem isso, um "aham" no meio
+        # da frase do outro abriria turno e o rótulo trocaria no meio do trecho.
         min_duration_on=0.3,
         min_duration_off=0.5,
     )

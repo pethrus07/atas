@@ -93,7 +93,9 @@ def _upsert_historico(reg, pasta):
                 linhas.append(json.loads(ln))
             except Exception:
                 pass
-    linhas = [r for r in linhas if r.get("id") != reg["id"]]  # upsert
+    # Upsert pela chave data|título: reprocessar a mesma reunião corrige a linha
+    # em vez de duplicá-la, senão a tendência do painel ficaria torta.
+    linhas = [r for r in linhas if r.get("id") != reg["id"]]
     linhas.append(reg)
     linhas.sort(key=lambda r: r.get("data", ""))
     hist_path.write_text(

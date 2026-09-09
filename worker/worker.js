@@ -1,8 +1,22 @@
-// Atas — Worker Cloudflare
-// - POST /api/upload : recebe a transcrição (Bearer token), resume com Workers AI,
-//                      guarda no D1 e devolve o link da página.
-// - GET  /r/<id>     : renderiza a página branded da ata (pública p/ quem tem o link).
-// - GET  /           : landing simples.
+/**
+ * Atas — Worker Cloudflare (arquivo único, sem build e sem dependência).
+ *
+ * É a metade remota do sistema: a máquina do Pedro só sabe transcrever, então o
+ * que precisa de nuvem — o resumo por IA, a persistência e um endereço para
+ * mandar ao cliente — vive aqui.
+ *
+ *  - POST /api/upload : recebe a transcrição (Bearer token), resume com Workers AI,
+ *                       guarda no D1 e devolve o link da página.
+ *  - GET  /r/<id>     : renderiza a página branded da ata (pública p/ quem tem o link).
+ *  - GET  /           : landing simples.
+ *
+ * Tudo num arquivo só de propósito: sem package.json não há build, não há
+ * node_modules e `npx wrangler deploy` é o processo inteiro. O CSS mora numa
+ * constante no fim — inclusive o bloco @media print, que é o que faz o PDF
+ * gerado pelo entregavel.py sair paginado direito.
+ *
+ * Bindings (wrangler.toml): AI (Workers AI) e DB (D1). Segredo: UPLOAD_TOKEN.
+ */
 
 const MARCA = "RYZE";                        // identidade visual RYZE
 const SITE = "ryzecode.com.br";
@@ -15,6 +29,9 @@ function logo(fill, h) {
   return `<svg viewBox="0 0 400 520" fill="none" xmlns="http://www.w3.org/2000/svg" style="height:${h};width:auto;display:block"><path d="${LOGO_PATH}" fill="${fill}"/></svg>`;
 }
 
+// Esquema fechado entregue ao modelo em `response_format`. Existe para o resumo
+// vir como DADO e não como prosa: sem ele, cada reunião voltaria com um texto de
+// formato diferente e a página teria de adivinhar onde estão as decisões.
 const ESQUEMA = {
   type: "object",
   properties: {
@@ -77,16 +94,23 @@ async function upload(req, env, url) {
   const transcricao = segments
     .map((s) => `${s.speaker}: ${s.text}`)
     .join("\n")
-    .slice(0, 40000); // corta transcrições gigantes p/ caber no contexto
+    // Corta transcrições gigantes p/ caber no contexto. O corte vale SÓ para o
+    // resumo: os segments inteiros continuam indo para o D1 e para a página.
+    // Numa reunião muito longa, portanto, o resumo ignora o final.
+    .slice(0, 40000);
 
   let resumo = null;
   try {
     resumo = await resumir(env, transcricao);
   } catch (e) {
     // Se a IA falhar, ainda guardamos a transcrição — a página mostra sem resumo.
+    // Perder o resumo é aceitável; perder a reunião não é. O motivo do erro não
+    // é registrado aqui: para investigar, `npx wrangler tail` durante o upload.
     resumo = null;
   }
 
+  // O id é a fechadura: 32 hexadecimais aleatórios, não adivinháveis. Não há
+  // login nem senha — quem tem o link lê a ata (a página vai com `noindex`).
   const id = crypto.randomUUID().replace(/-/g, "");
   const data = new Date().toISOString();
   await env.DB.prepare(
@@ -95,6 +119,8 @@ async function upload(req, env, url) {
     .bind(id, titulo, data, JSON.stringify(segments), resumo ? JSON.stringify(resumo) : null)
     .run();
 
+  // origin vem do pedido, não de constante: o link devolvido é sempre do mesmo
+  // host por onde o upload entrou (workers.dev hoje, domínio próprio amanhã).
   return Response.json({ url: `${url.origin}/r/${id}` });
 }
 
@@ -368,7 +394,10 @@ td.prazo{font-family:var(--mono);font-size:12px;color:var(--g600);white-space:no
   color:var(--g500);font-size:11.5px;font-family:var(--mono);letter-spacing:.3px}
 .rodape .rlogo svg{display:block;opacity:.8}
 
-/* ── Impressão (PDF) ── */
+/* ── Impressão (PDF) ──
+   Não é enfeite: é este bloco que o Chrome headless do entregavel.py usa para
+   imprimir o arquivo que vai ao cliente. A transcrição começa em página nova e
+   nenhum card é partido no meio. */
 @page{size:A4;margin:14mm}
 @media print{
   body{background:#fff}

@@ -119,6 +119,8 @@ def main():
 
         # Entregável offline (PDF/HTML com a marca) — para enviar ao cliente sem
         # compartilhar o link. Puramente adicional: falhar aqui não quebra nada.
+        # Depende do `url`: a página é BAIXADA do Worker, não montada aqui. Sem
+        # upload não há PDF — o entregável é offline para o cliente, não para nós.
         entregas = {"html": None, "pdf": None}
         if url:
             try:

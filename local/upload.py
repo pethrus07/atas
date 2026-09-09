@@ -14,6 +14,11 @@ def enviar(segments, titulo, worker_url, token, timeout=180):
     """
     POST {titulo, segments} em <worker_url>/api/upload com Bearer token.
     Devolve a URL da ata em caso de sucesso, ou levanta exceção.
+
+    timeout alto (3 min) porque o Worker só responde DEPOIS que o Workers AI
+    termina o resumo — a espera é do modelo, não da rede. Sem retry de
+    propósito: repetir criaria uma segunda ata, com outro id, para a mesma
+    reunião. Quem chama trata a exceção e fica com o backup .md.
     """
     url = worker_url.rstrip("/") + "/api/upload"
     body = json.dumps({"titulo": titulo, "segments": segments}).encode("utf-8")

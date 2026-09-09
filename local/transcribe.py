@@ -23,6 +23,10 @@ from faster_whisper import WhisperModel
 _MODELO = None
 
 # Diarização roda em venv separado (py3.12) via subprocess — ver diarize.py.
+# São dois ambientes porque o sherpa-onnx não tem roda para o Python 3.14 em que
+# o faster-whisper já está montado. Rebaixar o ambiente inteiro arriscaria a
+# transcrição, que é o coração do sistema; isolar atrás de uma fronteira de
+# processo custa um subprocess e um JSON — e a diarização pode falhar sozinha.
 _DIAR_PY = pathlib.Path(r"C:\Users\olive\.venvs\diar\Scripts\python.exe")
 _DIAR_SCRIPT = pathlib.Path(__file__).parent / "diarize.py"
 
@@ -72,13 +76,26 @@ def _diarizar_loopback(loop_wav, threshold=0.5, num_speakers=-1, diar_py=None):
             if ln.startswith("["):
                 return json.loads(ln)
     except Exception:
+        # Engolir é proposital: venv ausente, modelo faltando, timeout, JSON
+        # torto — nada disso pode custar a reunião. Sem turnos, o chamador
+        # mantém um "Participante" só e o resto do fluxo segue igual.
         return None
     return None
 
 
 def _rotular_participantes(segs_part, turnos):
     """Reetiqueta 'Participante' -> 'Participante N' por sobreposição com os turnos.
-    Se só houver 1 locutor (ou diarização falhar), mantém 'Participante'."""
+    Se só houver 1 locutor (ou diarização falhar), mantém 'Participante'.
+
+    Casa por TEMPO porque os dois lados são independentes: o Whisper corta por
+    frase e o diarizador corta por troca de voz, então os limites nunca batem —
+    o dono do trecho é quem mais o ocupa.
+
+    ATENÇÃO: não há teto de locutores. O que o agrupamento devolver vira rótulo,
+    e em 08/09/2026 um participante remoto só virou 78 'Participantes' porque o
+    diar_threshold (padrão 0.5) é baixo demais para voz vinda do loopback.
+    O botão está no config.json — ver docs/ARQUITETURA.md §6.
+    """
     if not turnos:
         return
     def dono(seg):
