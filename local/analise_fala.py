@@ -6,10 +6,14 @@ Roda localmente depois de transcrever. Analisa só as falas do "Você",
 salva um relatório por reunião e acumula um histórico para acompanhar a
 evolução. NUNCA sobe para o Worker nem entra no entregável do cliente.
 
-Saída em Projetos/atas/fala-analise/ :
+Saída em Projetos/atas/fala-analise/ (fora do git, só nesta máquina):
   - historico.jsonl        (uma linha por reunião — fonte de verdade)
   - <stamp>_<titulo>.md    (relatório detalhado da reunião)
   - raio-x.html            (painel com todas as reuniões + tendência)
+
+e a nota `sinapse/08-CRESCIMENTO/fala-raio-x.md`, que **não leva o título da reunião**:
+título costuma ter nome de cliente ou assunto da Parresia, e o vault é outro
+repositório. Na nota cada reunião aparece por data + tipo (v2, 30/09/2026).
 """
 import json
 import pathlib
@@ -221,13 +225,17 @@ h2{{font-family:'Space Grotesk';font-size:16px;margin:32px 0 12px}}
 # Alimenta o segundo cérebro (Sinapse): escreve uma nota AUTO-gerada de Fala no
 # vault a cada reunião → aba Crescimento Pessoal. A narrativa/metas ficam na nota
 # escrita à mão (fala-e-apresentacao); esta é só o retrato de dados, sobrescrevível.
+_TIPO_ROTULO = {"cliente": "cliente", "parresia": "Parresia", "carreira": "carreira",
+                "pessoal": "pessoal/estudo"}
+
+
 def _nota_vault_md(linhas):
     ult = linhas[-1]["metrics"] if linhas else {}
     def _row(r):
         m = r["metrics"]
         top = ", ".join(list(m["muletas"])[:3]) or "—"
-        titulo = str(r["titulo"]).replace("|", "/")
-        return (f"| {r['data']} | {titulo} | {m['dur_min']} | {m['share_fala']*100:.0f}% "
+        tipo = _TIPO_ROTULO.get(r.get("tipo"), "—")
+        return (f"| {str(r['data'])[:16]} | {tipo} | {m['dur_min']} | {m['share_fala']*100:.0f}% "
                 f"| {m['conf_por_min']} | {m['muletas_por_1000']} | {top} |")
     tab = "\n".join(_row(r) for r in linhas[-8:])
     return "\n".join([
@@ -243,7 +251,7 @@ def _nota_vault_md(linhas):
         f"- Muletas / 1000 palavras: **{ult.get('muletas_por_1000', 0)}**",
         f"- Reuniões monitoradas: **{len(linhas)}**", "",
         "## Reunião a reunião (últimas)",
-        "| Data | Reunião | Min | Fala | Conf/min | Mul/1k | Top muletas |",
+        "| Data | Tipo | Min | Fala | Conf/min | Mul/1k | Top muletas |",
         "|---|---|---|---|---|---|---|", tab, "",
         "## Conexões",
         "- Narrativa e metas: [[fala-e-apresentacao]]",
@@ -252,34 +260,49 @@ def _nota_vault_md(linhas):
 
 
 def _atualizar_vault(linhas):
-    """Best-effort: grava a nota de Fala no vault do Sinapse, se ele existir.
-    Vault = env SINAPSE_VAULT, senão ../../sinapse (irmão de atas). Nunca lança."""
+    """Grava a nota de Fala no vault do Sinapse, se ele existir.
+    Vault = env SINAPSE_VAULT, senão ../../sinapse (irmão de atas). Devolve o caminho,
+    None se o vault não existe nesta máquina; um erro de escrita LEVANTA (a etapa
+    raio_x do pipeline registra) — na v1 era engolido em silêncio."""
     import os
     base = os.environ.get("SINAPSE_VAULT")
     vault = pathlib.Path(base) if base else pathlib.Path(__file__).parents[2] / "sinapse"
     destino = vault / "08-CRESCIMENTO"
-    try:
-        if not destino.exists():
-            return None  # vault ausente nesta máquina → silencioso
-        p = destino / "fala-raio-x.md"
-        p.write_text(_nota_vault_md(linhas), encoding="utf-8")
-        return p
-    except Exception:
-        return None
+    if not destino.exists():
+        return None  # vault ausente nesta máquina
+    p = destino / "fala-raio-x.md"
+    p.write_text(_nota_vault_md(linhas), encoding="utf-8")
+    return p
 
 
-def processar(segments, titulo, quando, pasta=None):
+def processar(segments, titulo, quando, pasta=None, tipo=None, sessao_id=None, vault=True):
     """Analisa, salva relatório .md, atualiza histórico, regenera o painel e
-    alimenta o Sinapse. Retorna os caminhos gerados (None nos que falharem)."""
+    alimenta o Sinapse. Retorna os caminhos gerados (vault=None se não gravou)."""
     pasta = pathlib.Path(pasta) if pasta else FALA_DIR
     pasta.mkdir(exist_ok=True)
     metrics = analisar(segments)
     safe = "".join(c if c.isalnum() or c in " -_" else "_" for c in titulo).strip() or "reuniao"
-    reg = {"id": f"{quando}|{titulo}", "data": quando, "titulo": titulo, "safe": safe,
-           "metrics": metrics}
+    reg = {"id": sessao_id or f"{quando}|{titulo}", "data": quando, "titulo": titulo,
+           "safe": safe, "tipo": tipo, "metrics": metrics}
     linhas = _upsert_historico(reg, pasta)
     md = _relatorio_md(reg, pasta)
     dash = pasta / "raio-x.html"
     dash.write_text(_dashboard(linhas, pasta), encoding="utf-8")
-    vault = _atualizar_vault(linhas)  # alimenta a aba Crescimento Pessoal (best-effort)
-    return {"md": md, "dashboard": dash, "metrics": metrics, "vault": vault}
+    nota = _atualizar_vault(linhas) if vault else None
+    return {"md": md, "dashboard": dash, "metrics": metrics, "vault": nota}
+
+
+def reescrever_nota(pasta=None, tipos=None):
+    """Regrava a nota do vault a partir do histórico, completando o `tipo` das
+    linhas antigas com `tipos` ({id_do_historico: tipo}). Usado na migração v2."""
+    pasta = pathlib.Path(pasta) if pasta else FALA_DIR
+    hist = pasta / "historico.jsonl"
+    if not hist.exists():
+        return None
+    linhas = [json.loads(ln) for ln in hist.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    for r in linhas:
+        if tipos and not r.get("tipo") and r.get("id") in tipos:
+            r["tipo"] = tipos[r["id"]]
+    hist.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in linhas) + "\n",
+                    encoding="utf-8")
+    return _atualizar_vault(linhas)
