@@ -1,10 +1,24 @@
 {
+  "_leia": "Copie para config.json (fora do git). Nenhuma chave é obrigatória para gravar; worker_url e upload_token só servem para PUBLICAR reunião de cliente. Todas as chaves e padrões: docs/ARQUITETURA.md §9.",
+  "meu_nome": "Pedro",
   "worker_url": "https://atas.desbravando-utv.workers.dev",
   "upload_token": "COLE_AQUI_O_MESMO_TOKEN_DO_wrangler_secret",
-  "model": "small",
 
-  "_diarizacao": "Separa participantes remotos (loopback) em 'Participante 1/2/3'. Opcional.",
+  "model": "auto",
+  "dispositivo": "auto",
+  "microfone": null,
+
   "diarizar": true,
-  "diar_threshold": 0.5,
-  "diar_num_speakers": -1
+  "diar_threshold": 0.7,
+  "diar_max_falantes": 6,
+
+  "estruturar": true,
+  "claude_cli": null,
+  "claude_modelo": null,
+
+  "audio_reter_dias": 30,
+  "publicacao_reter_dias": 90,
+
+  "ao_vivo": false,
+  "ao_vivo_janela_s": 30
 }
