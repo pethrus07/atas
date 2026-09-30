@@ -1,13 +1,28 @@
 name = "atas"
 main = "worker.js"
 compatibility_date = "2026-01-01"
+# Conta Desbravando (ryzecode08). Fixada de propósito: sem esta linha o wrangler usa a
+# conta do login ativo, e desde 28/09/2026 o login padrão desta máquina é a conta pessoal.
+account_id = "c8c7dba80266ce63cfac94490604fa14"
 
-# Workers AI — usado para gerar o resumo/ata
-[ai]
-binding = "AI"
-
-# D1 — guarda cada reunião (id, título, data, transcrição, resumo)
+# D1 — só o que foi PUBLICADO (reunião de cliente). Migrações em migrations/.
 [[d1_databases]]
 binding = "DB"
 database_name = "atas"
 database_id = "a89037d1-3d28-410c-9e4b-195fc834a8eb"
+migrations_dir = "migrations"
+
+# Retenção: apaga diariamente o que passou de expira_em.
+[triggers]
+crons = ["17 9 * * *"]
+
+# Homologação: `npx wrangler deploy --env homolog` → atas-homolog.desbravando-utv.workers.dev
+# O D1 de homologação precisa ser criado uma vez (docs/ARQUITETURA.md §11) e o id colado abaixo.
+[env.homolog]
+name = "atas-homolog"
+
+[[env.homolog.d1_databases]]
+binding = "DB"
+database_name = "atas-homolog"
+database_id = "PREENCHER_APOS_d1_create"
+migrations_dir = "migrations"
