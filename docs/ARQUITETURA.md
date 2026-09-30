@@ -1,64 +1,59 @@
-# Atas — Arquitetura e funcionamento
+# Atas — Arquitetura e funcionamento (v2)
 
-> Escrito em 09/09/2026 para uma pessoa entender o sistema **sozinha**, sem quem o construiu por
-> perto. Cobre o caminho inteiro de uma reunião — do microfone ao link publicado — os dois
-> ambientes Python que o sistema usa (e por que são dois), o que fica fora do git e o que quebra
-> quando se esquece de um detalhe.
+> Reescrito em 30/09/2026, na v2, para uma pessoa entender o sistema **sozinha**. Cobre o
+> caminho inteiro de uma reunião — do microfone à ata estruturada e ao PDF —, os dois
+> ambientes Python, o que fica fora do git, os números medidos e o que quebra quando se
+> esquece de um detalhe. A v1 (jul–set/2026) está no histórico do git e em §15.
 >
-> O que este documento **não** é: o manual de uso do dia a dia (isso é o
-> [README.md](../README.md), que é curto de propósito).
+> O manual do dia a dia é o [README.md](../README.md). O contrato da v2 é
+> [BRIEFING-V2.md](BRIEFING-V2.md).
 
 ---
 
 ## 0 · Como ler
 
-Se você tem cinco minutos, leia as seções 1, 2 e 13. Se vai mexer na captura ou na transcrição,
-leia 3 a 6. Se vai mexer na página publicada, 7. Se só quer resolver um problema agora, vá para
-a receita certa em 11 e para as armadilhas em 14.
+Cinco minutos: §1, §2 e §13. Mexer na gravação: §3 e §4. Na transcrição e nos falantes: §5
+e §6. Na ata: §7. No Worker: §10. Resolver um problema agora: §11 (receitas) e §14.
 
 ---
 
 ## 1 · O sistema em um parágrafo
 
-Um script Python roda no XPS e grava a reunião **de duas fontes físicas separadas**: o microfone
-(que vira o falante "Você") e o loopback do alto-falante (que vira "Participante"). Como são dois
-arquivos WAV distintos, a pergunta "quem falou?" já nasce respondida entre os dois lados, sem IA.
-Cada WAV é transcrito **offline** pelo faster-whisper, e o canal do loopback ainda passa por uma
-**diarização acústica** (sherpa-onnx, num segundo ambiente Python) que tenta separar os
-participantes remotos em "Participante 1", "Participante 2"… Os trechos são fundidos e ordenados
-por tempo, viram um único array de segmentos, e esse array é enviado por HTTP a um **Cloudflare
-Worker**, que pede um resumo executivo ao **Workers AI**, guarda tudo num **D1** e devolve o link
-de uma página com a marca RYZE. De volta na máquina, o script salva um backup `.md`, baixa aquela
-página e imprime um **PDF** para mandar ao cliente, e roda o **Raio-X da Fala** — uma análise
-pessoal e interna de como o Pedro falou, que nunca sai da máquina. **O áudio é apagado no final,
-sempre** (bloco `finally`).
+Uma janela (`app.py`) pergunta o contexto da reunião — título, **tipo**, projeto e quem vai
+falar do outro lado — e grava **duas fontes físicas separadas**: o microfone ("Você") e o
+loopback do alto-falante ("Participante"). Cada bloco de 100 ms vai **para o disco na hora**,
+num `.pcm` dentro da pasta da reunião, e uma batida a cada 5 s diz que o gravador está vivo.
+Ao parar, o `pipeline.py` transcreve cada canal na GPU (faster-whisper `large-v3-turbo`, com
+o vocabulário do contexto), separa as vozes do loopback (sherpa-onnx, noutro venv) usando o
+número de participantes informado, e escreve um backup `.md` antes de qualquer coisa que
+dependa de rede. Depois chama o **Claude Code sem interação** (`claude -p`) com um JSON Schema
+fechado, e **audita** a resposta contra a transcrição: todo item precisa de uma citação
+literal, e prazo sem a expressão dita vira lacuna. Da ata canônica (`ata.json`) saem o `.md`,
+a página e o PDF, renderizados **na máquina**. Só reunião de **cliente** gera entregável com
+marca RYZE, e só sobe para o Worker **quando o Pedro manda** (botão na tela final ou
+`atas.py publicar`), com senha e expiração. O áudio é compactado em Opus e fica 30 dias
+nesta máquina. O Raio-X da fala atualiza a nota do Sinapse **sem títulos**. No Claude, o
+`/ata` fecha a reunião com o Pedro: nomes, lacunas e propostas — nunca publica sozinho.
 
 ```mermaid
 flowchart TD
-  B["gravar.bat"] --> R["run.py (orquestra)"]
-  R --> RC["record.py · WASAPI"]
-  RC --> W1["out/mic.wav"]
-  RC --> W2["out/loopback.wav"]
-  W1 --> T["transcribe.py · faster-whisper, 2 passadas"]
-  W2 --> T
-  W2 -.->|"subprocess: venv diar"| D["diarize.py · sherpa-onnx"]
-  D -.->|"turnos por locutor"| T
-  T --> S["segmentos: falante, início, fim, texto"]
-  S --> U["upload.py"]
-  U -->|"POST /api/upload + Bearer"| WK["worker.js na Cloudflare"]
-  WK -->|"pede o resumo"| AI["Workers AI · llama 3.3 70B"]
-  AI -->|"JSON do esquema"| WK
-  WK --> DB["D1 · tabela reunioes"]
-  WK --> PG["GET /r/id · página RYZE"]
-  PG --> E["entregavel.py · Chrome headless → PDF"]
-  S --> MD["backup .md em atas-salvas/"]
-  S --> FA["analise_fala.py · fala-analise/ + Sinapse"]
-  R -.->|"finally: apaga os .wav"| W1
+  A["app.py · contexto R6"] --> G["record.py · Gravador"]
+  G -->|"bloco a bloco"| P["mic.pcm · loop.pcm"]
+  G -.->|"a cada 5 s"| B[".batida"]
+  P --> T["transcribe.py · Whisper GPU + vocabulário"]
+  P -.->|"subprocess: venv diar"| D["diarize.py · teto / nº informado"]
+  D -.-> T
+  T --> TJ["transcricao.json + backup ata.md"]
+  TJ --> E["estruturar.py · claude -p --json-schema"]
+  E --> AU["ata.py · auditar: citação, prazo, dono"]
+  AU --> AJ["ata.json (canônica)"]
+  AJ --> R["render.py · ata.md / ata.html / ata.pdf"]
+  AJ -->|"só cliente"| EN["entregavel.html / .pdf (RYZE)"]
+  EN -->|"POST /api/atas + senha"| W["Worker · D1 · /r/id"]
+  TJ --> RX["analise_fala.py · Raio-X → Sinapse sem títulos"]
+  P -->|"Opus conferido"| O["audio/*.opus · 30 dias"]
+  AJ --> S["/ata no Claude · propõe memória, Sinapse, decisões, ClickUp"]
 ```
-
-Três coisas nascem de uma reunião e vão para lugares diferentes, de propósito: a **página** (link
-público para quem tem o endereço), o **PDF/`.md`** (entregável e backup, locais) e o **Raio-X**
-(dado pessoal, interno, nunca enviado).
 
 ---
 
@@ -66,371 +61,407 @@ público para quem tem o endereço), o **PDF/`.md`** (entregável e backup, loca
 
 ```
 atas/
-├── local/                    tudo o que roda no XPS
-│   ├── gravar.bat            atalho clicável: chama run.py com o venv certo e NÃO fecha em erro
-│   ├── run.py                o orquestrador: config → gravar → transcrever → publicar → entregar
-│   ├── record.py             captura mic + loopback (soundcard/WASAPI) em dois WAV 16 kHz mono
-│   ├── transcribe.py         faster-whisper nos dois WAV + chamada da diarização; funde e ordena
-│   ├── diarize.py            CLI de diarização (sherpa-onnx) — roda no OUTRO venv, por subprocess
-│   ├── upload.py             POST da transcrição no Worker (só stdlib)
-│   ├── entregavel.py         baixa a página publicada e imprime PDF com Chrome headless
-│   ├── analise_fala.py       Raio-X da Fala: métricas, relatório, painel HTML e nota no Sinapse
-│   ├── config.example.json   modelo do config (FORA do git está o config.json real, com o token)
-│   ├── config.json           FORA DO GIT — worker_url, upload_token, model e os ajustes opcionais
-│   ├── out/                  FORA DO GIT — os .wav transitórios; apagados ao fim de cada execução
-│   └── models/               FORA DO GIT — modelos ONNX da diarização (~35 MB) + scripts do sherpa
-├── worker/                   o que roda na Cloudflare
-│   ├── worker.js             arquivo único: rotas, resumo por IA, render da página, CSS embutido
-│   ├── schema.sql            a única tabela: reunioes
-│   └── wrangler.toml         nome do Worker, binding de AI e do D1
-├── atas-salvas/              FORA DO GIT — backup .md + .html + .pdf de cada reunião (dado de cliente)
-├── fala-analise/             FORA DO GIT — histórico e painel do Raio-X (dado pessoal)
-├── docs/ARQUITETURA.md       este arquivo
-└── README.md                 como usar no dia a dia e como montar do zero
+├── local/                     tudo o que roda no XPS
+│   ├── gravar.bat             atalho: abre o app.py com o venv certo; pausa se ele morrer
+│   ├── app.py                 a janela (Tk): nova reunião → checagem → gravando → gerando → pronto
+│   ├── atas.py                CLI: retomar, processar, listar, mostrar, buscar, falantes, publicar…
+│   ├── sessao.py              a pasta da reunião, o sessao.json, a batida, órfãs
+│   ├── record.py              captura em blocos no disco, reabertura, checagem, manter acordado
+│   ├── audio.py               PCM ↔ Opus, conferência, retenção
+│   ├── transcribe.py          Whisper (GPU→CPU), vocabulário, recorte por palavra, diarização
+│   ├── diarize.py             sherpa-onnx — roda no OUTRO venv, por subprocess
+│   ├── estruturar.py          prompt + claude -p → ata candidata
+│   ├── ata.py                 schema atas/ata@1, auditoria "nada inventado", lacunas, log
+│   ├── render.py              .md, página interna, entregável RYZE (HTML/CSS)
+│   ├── entregavel.py          HTML local → PDF (Chrome headless)
+│   ├── upload.py              publicação no Worker (só cliente), senha, exclusão
+│   ├── pipeline.py            as etapas na ordem, idempotentes, registradas
+│   ├── ao_vivo.py             transcrição incremental durante a reunião (MVP, GPU)
+│   ├── analise_fala.py        Raio-X da fala + nota do Sinapse
+│   ├── legado.py              importa as atas soltas de antes da v2
+│   ├── config.py              padrões + config.json + onde está o claude.exe
+│   ├── vocabulario.json       termos por tipo e por projeto (hotwords do Whisper)
+│   ├── config.example.json    modelo do config (o real, com token, fica FORA do git)
+│   └── models/                FORA DO GIT — ONNX da diarização (~35 MB)
+├── worker/                    o que roda na Cloudflare
+│   ├── worker.js              publicação, senha, expiração, exclusão; render das atas da v1
+│   ├── migrations/            0001 (tabela da v1) + 0002 (colunas da v2)
+│   ├── schema.sql             as duas migrações juntas (banco novo)
+│   ├── wrangler.toml          conta FIXADA, D1, cron, ambiente homolog
+│   ├── package.json + test/   só para os testes (Miniflare); o deploy não tem build
+├── claude/skills/ata/         a skill /ata (junction em ~/.claude/skills/ata)
+├── tests/                     pytest: 51 testes, inclusive fumaça real (-m lento)
+├── atas-salvas/               FORA DO GIT — uma pasta por reunião (§8)
+├── fala-analise/              FORA DO GIT — histórico e painel do Raio-X
+└── docs/                      este arquivo + BRIEFING-V2.md
 ```
-
-Não há `package.json`: o Worker é um arquivo só e sobe com `npx wrangler`. Não há `requirements.txt`
-nem `pyproject`: as dependências Python vivem em dois venvs fora do repositório (seção 5).
 
 ---
 
 ## 3 · O ciclo de vida de uma reunião
 
-1. **Dois cliques em `local/gravar.bat`.** O `.bat` faz `cd` para a própria pasta e chama o
-   `python.exe` do venv `faster-whisper` com `run.py`. Se o processo sair com código diferente de
-   zero, ele imprime um aviso e dá `pause` — a janela fica aberta com o traceback na tela. Isso não
-   é firula: enquanto ela fechava sozinha, um erro de driver chegava como "o botão não funciona".
-2. **`run.py` carrega o config.** Sem `local/config.json`, ou sem `worker_url`/`upload_token`
-   dentro dele, ele sai com uma mensagem dizendo exatamente o que falta.
-3. **`record.py` escolhe os dispositivos e grava.** Duas threads, uma por fonte, lendo blocos de
-   100 ms até você apertar ENTER. Escreve `out/mic.wav` e `out/loopback.wav` (PCM 16 bits, mono,
-   16 kHz — o formato que o Whisper quer) e devolve um diagnóstico com duração e RMS de cada lado.
-   Se algum RMS vier praticamente zerado, avisa na tela: quase sempre significa que a chamada
-   estava tocando em outro dispositivo.
-4. **Se os dois lados vieram com menos de 1 segundo, para por aqui.** Senão, pede o título.
-5. **`transcribe.py` faz duas passadas independentes** do faster-whisper, uma por WAV, rotulando
-   os trechos como "Você" e "Participante".
-6. **A diarização entra só no loopback** (seção 6): `transcribe.py` chama `diarize.py` num outro
-   interpretador Python, por `subprocess`, e reetiqueta os trechos de "Participante" em
-   "Participante 1/2/3…" pela maior sobreposição de tempo com os turnos devolvidos.
-7. **Os dois conjuntos são concatenados e ordenados por `start`.** Daqui em diante o sistema
-   inteiro fala uma coisa só: uma lista de `{speaker, start, end, text}`.
-8. **`upload.py` faz `POST /api/upload`** com `Authorization: Bearer <token>`. A falha aqui é
-   tolerada: o `run.py` imprime o erro e segue, porque o backup local ainda vai ser salvo.
-9. **O Worker resume, guarda e responde o link.** Ele monta o texto `Falante: fala`, corta em
-   40 000 caracteres, manda ao Workers AI com um `json_schema` fechado, insere a linha no D1 com
-   um id de 32 hexadecimais e devolve `{"url": "<origem>/r/<id>"}`.
-10. **`run.py` salva o backup `.md`** em `atas-salvas/`, com carimbo de data e o título higienizado.
-11. **`entregavel.py` baixa a página publicada e imprime o PDF** com o Chrome em modo headless,
-    sem cabeçalho nem rodapé — então nenhuma URL aparece no arquivo que vai ao cliente.
-12. **`analise_fala.py` roda o Raio-X**, atualiza `fala-analise/historico.jsonl`, regrava o painel
-    `raio-x.html` e, se o vault do Sinapse existir na máquina, sobrescreve a nota de Fala lá.
-13. **O `finally` apaga os dois `.wav`.** Aconteça o que acontecer — erro, Ctrl+C, upload
-    quebrado — o áudio não fica guardado. É a promessa que o rodapé da página faz.
+1. **Atalho → `gravar.bat` → `app.py`.** O console fica aberto atrás, minimizado: se o
+   Python morrer antes da janela subir, o traceback fica lá e o `pause` segura.
+2. **Ao abrir**, `sessao.orfas()` procura sessão em `gravando`/`gravado`/`processando` cuja
+   `.batida` parou há mais de 45 s. Se houver, a janela oferece "Gerar a ata com o que foi
+   gravado".
+3. **Nova reunião (R6).** Título, **tipo (obrigatório, sem valor padrão: herdar o da reunião
+   anterior fazia Parresia virar cliente)**, projeto (lista das reuniões anteriores; escolher um
+   preenche os participantes da última) e quem vai falar do outro lado. "Mais opções",
+   recolhido e com resumo de uma linha: Claude ligado/desligado, ao vivo.
+4. **Checagem.** `record.escolher_dispositivos()` pega o primeiro microfone e o primeiro
+   loopback que **abrem de verdade**; `medir_niveis()` grava 3 s de cada. Microfone mudo é
+   alerta; chamada em silêncio é aviso ("normal se ainda não começou").
+5. **Gravando.** `Sessao.criar()` faz a pasta; `Gravador.iniciar()` liga o "não dormir" do
+   Windows, a batida e uma thread por canal. A janela mostra tempo, nível de cada lado e
+   alertas (mic mudo > 1 min, chamada muda > 3 min, canal que parou). O título da janela vira
+   "● 00:12:34 — Atas", visível na barra de tarefas.
+6. **Parar.** Fechar a janela pergunta antes. `parar()` fecha os canais, faz fsync e marca
+   `gravado`.
+7. **`pipeline.processar()`** (§4) roda numa thread, com a batida ligada; a tela mostra a
+   última mensagem.
+8. **Pronto.** Todas as etapas com ✓/✗/–/○ e o motivo; botões "Ver a ata", "Abrir a pasta"
+   (Explorer com o arquivo selecionado) e, em cliente, **"Publicar para o cliente"** e depois
+   "Copiar link e senha".
+9. **No Claude, `/ata`** (§12).
 
 ---
 
-## 4 · Os módulos
+## 4 · As etapas do pipeline
 
-| Arquivo | Responsabilidade | O que **não** faz |
-|---|---|---|
-| `local/gravar.bat` | Chamar o `run.py` com o Python certo e manter a janela aberta em caso de erro | Não conhece nada do fluxo; só o caminho do venv |
-| `local/run.py` | Ler o config, orquestrar as etapas na ordem, salvar o `.md`, copiar o link, abrir os arquivos, apagar o áudio | Não grava, não transcreve, não publica: só chama quem faz |
-| `local/record.py` | Escolher microfone e loopback que **abrem de verdade**, gravar em duas threads, escrever os WAV, medir RMS | Não sabe de reunião, título ou upload. Não converte formato: pede 16 kHz e deixa o WASAPI reamostrar |
-| `local/transcribe.py` | As duas passadas do Whisper, a chamada da diarização e a fusão ordenada | Não decide o que vai para o cliente; não fala com o Worker |
-| `local/diarize.py` | Rodar o sherpa-onnx num WAV e cuspir os turnos em JSON no stdout | Não conhece "Você" nem "Participante": devolve locutores numerados. Não roda no venv principal |
-| `local/upload.py` | Um `POST` autenticado, com o erro do servidor repassado por inteiro | Não tem retry, não guarda nada, não sabe o que é uma ata |
-| `local/entregavel.py` | Baixar o HTML publicado e imprimir o PDF | Não gera a página: ela vem do Worker. Sem link publicado, não há entregável |
-| `local/analise_fala.py` | Métricas da fala do Pedro, relatório `.md`, `historico.jsonl`, painel HTML e nota no Sinapse | Nunca sobe nada para o Worker nem entra no PDF do cliente |
-| `worker/worker.js` | As três rotas, o resumo por IA, a persistência no D1 e todo o HTML/CSS da página | Não tem build, não tem dependência, não tem CORS nem rate limit |
-| `worker/schema.sql` | A tabela `reunioes` | Não tem migração: é `CREATE TABLE IF NOT EXISTS` |
+| Etapa | O que faz | Pula quando | Registro |
+|---|---|---|---|
+| `transcricao` | Whisper nos dois canais + diarização → `transcricao.json` | o arquivo já existe | modelo, dispositivo, trechos, segundos |
+| `falantes` | resultado da diarização | — | nº de remotos, modo (informado/teto/limiar), ou o erro |
+| *(backup)* | `ata.md` com a transcrição, **antes** de Claude/rede/Chrome | — | — |
+| `estrutura` | `claude -p` → `ata.montar()` (auditoria) → `ata.json` | ata já estruturada; `estruturar: false` | contagens, custo, ou o motivo |
+| `render` / `pdf` | `ata.md`, `ata.html`, `ata.pdf`; em cliente estruturada, `entregavel.*` | — | arquivos |
+| `publicacao` | **não publica sozinha**: fica `pendente` até o Pedro mandar; atualiza a página se ela já está no ar; tipo interno com página no ar → apaga | tipo interno; sem entregável | URL, pendente, ou o erro |
+| `raio_x` | métricas + painel local + nota do Sinapse | reunião legada | se a nota foi escrita |
+| `audio` | PCM → Opus, confere a duração, apaga o PCM; aplica a retenção só às reuniões com **ata garantida** (estruturada, com falas, sem etapa essencial falhada), contando de `processado_em` | sem PCM | MB, dias |
+
+**Idempotente e retomável:** rodar `processar()` de novo só faz o que falta. **Uma execução
+por sessão**: `.processando.lock` (O_EXCL) impede a janela e o /ata de processarem a mesma
+reunião ao mesmo tempo. Refazer transcrição ou ata guarda a anterior em `ata.antes-*.json`. Uma exceção
+numa etapa vira `falhou` com o motivo (e o traceback em `erros.log` da pasta), e as etapas
+seguintes que não dependem dela rodam. Estado final: `pronto` ou `pronto_com_falhas`; a janela
+e o `retomar` oferecem de novo as sessões órfãs, as `falhou` e as `pronto_com_falhas` em etapa
+essencial (transcrição, ata, página, PDF).
 
 ---
 
-## 5 · Os dois ambientes Python (e por que são dois)
+## 5 · Os dois ambientes Python
 
 | | Principal | Diarização |
 |---|---|---|
 | Caminho | `C:\Users\olive\.venvs\faster-whisper` | `C:\Users\olive\.venvs\diar` |
 | Python | 3.14.6 | 3.12.13 |
-| Quem usa | `gravar.bat`, e portanto `run.py`, `record.py`, `transcribe.py`, `upload.py`, `entregavel.py`, `analise_fala.py` | só `diarize.py` |
-| Bibliotecas | `faster-whisper` 1.2.1, `soundcard`, `numpy` 2.5.1, PyAV | `sherpa-onnx` 1.13.4, `numpy` |
-| Como é chamado | direto | `subprocess.run([...])` a partir de `transcribe.py`, com `timeout=1200` |
+| Quem usa | tudo, menos `diarize.py` | só `diarize.py` |
+| Bibliotecas | `faster-whisper` 1.2.1 (ctranslate2 4.8.1), `soundcard` 0.4.6, `numpy` 2.5.1, `av` 18, `pytest`, `pillow`, **`nvidia-cublas-cu12` 12.9 + `nvidia-cudnn-cu12` 9.27** | `sherpa-onnx` 1.13.4, `numpy` |
 
-São dois porque as libs de áudio/ML não convivem no mesmo ambiente: o sherpa-onnx não tem roda
-para o Python 3.14 em que o faster-whisper já está montado. Em vez de rebaixar o ambiente inteiro
-(e arriscar a transcrição, que é o coração do sistema), a diarização foi isolada atrás de uma
-fronteira de processo. O contrato entre os dois é minúsculo e por isso robusto: **um WAV de
-entrada, JSON de turnos no stdout**.
+São dois porque o sherpa-onnx não tem roda para o 3.14. O contrato entre eles é minúsculo:
+um arquivo de áudio (`.pcm` ou `.wav`) de entrada, uma linha JSON no stdout
+(`{turnos, falantes, modo, brutos}`).
 
-`transcribe.py` procura a última linha não vazia do stdout que comece com `[` — o sherpa loga
-progresso, e isso vai tudo no stderr, mas a regra existe para não quebrar se algum dia ele
-escrever no lugar errado. O caminho do interpretador pode ser trocado pelo config (`diar_python`);
-se o executável ou o script não existirem, a função devolve `None` e o sistema segue com um
-"Participante" só. Diarização é bônus: nunca pode custar a reunião.
+**GPU.** O ctranslate2 enxerga a RTX 3050 Ti, mas precisa das DLLs do cuBLAS 12 e do cuDNN 9.
+Elas vêm dos pacotes pip `nvidia-*` dentro do venv, e `transcribe._preparar_cuda()` põe as
+pastas `site-packages/nvidia/*/bin` no caminho de DLLs antes de carregar o modelo. O
+aquecimento (1 s de silêncio) é o que revela a falta de DLL — o construtor não falha. Se a
+GPU falhar, cai para CPU/int8 e o motivo vai para o `sessao.json`.
 
----
+**Medido em 30/09/2026** (5 min de áudio sintético com codec de chamada, cada modelo em
+processo isolado):
 
-## 6 · A diarização: como funciona e onde mora o limiar
+| Modelo | Dispositivo | Segundos por minuto de áudio |
+|---|---|---|
+| `small` (o da v1) | CPU int8 | 11,8 |
+| `small` | GPU fp16 | 1,8 |
+| `large-v3-turbo` | GPU fp16 | 2,3 |
 
-`diarize.py` monta um `OfflineSpeakerDiarization` do sherpa-onnx com duas redes, ambas em
-`local/models/diar/` (fora do git, ~35 MB, baixadas uma vez dos releases do sherpa-onnx):
+`model: "auto"` usa o `large-v3-turbo` na GPU e o `small` na CPU. O WER desse corpus
+(inglês, vozes SAPI) ficou em ~3% para todos — é limpo demais para diferenciar qualidade. **O
+WER em pt-BR ainda não foi medido**: precisa de áudio real, que agora fica guardado (§8).
 
-- **segmentação** — `sherpa-onnx-pyannote-segmentation-3-0/model.onnx`: acha onde há fala e onde a
-  voz troca;
-- **embedding** — `embedding.onnx` (CAM++): transforma cada trecho num vetor de voz.
-
-Os vetores são agrupados por `FastClusteringConfig`, e é aí que mora o botão:
-
-| Parâmetro | Config | Padrão no código | O que faz |
-|---|---|---|---|
-| `threshold` | `diar_threshold` | `0.5` | Distância máxima para dois trechos serem a mesma pessoa. **Maior = menos locutores.** Só vale quando o número não é fixado |
-| `num_clusters` | `diar_num_speakers` | `-1` | `-1` = descobrir sozinho. Qualquer inteiro ≥ 1 **crava** a quantidade e ignora o threshold |
-| — | `diarizar` | `true` | Desliga a etapa inteira |
-| `min_duration_on` / `min_duration_off` | — (fixos no código) | `0.3` / `0.5` | Fala curta demais e pausa curta demais não viram turno |
-
-Os três primeiros são lidos em `run.py` e repassados a `transcribe.py` num dict. **O
-`local/config.json` que está em uso hoje não tem nenhum deles** — só `worker_url`, `upload_token` e
-`model` — então valem os padrões acima. Para mudar o comportamento é preciso **acrescentar a chave**
-no `config.json`, não basta editar o `config.example.json`.
-
-A reetiquetagem acontece de volta em `transcribe.py::_rotular_participantes`: cada trecho
-transcrito recebe o locutor cujo turno tem a **maior sobreposição de tempo** com ele; se não houver
-sobreposição nenhuma, o turno de centro mais próximo. Os locutores são renumerados na ordem em que
-aparecem no tempo (para "Participante 1" ser mesmo o primeiro a falar) e, se só sobrar um, o rótulo
-volta a ser "Participante" sem número.
-
-**Não há teto.** Se o agrupamento devolver 78 clusters, o sistema escreve 78 participantes — e foi
-exatamente o que aconteceu em 08/09/2026 (seção 14).
+**Recorte por palavra.** Com vocabulário (`hotwords`), o turbo para de emitir os tempos
+intermediários e devolve um trecho para até 30 s de fala (medido: 4 falas → 1 trecho, as
+mesmas 52 palavras). Por isso a transcrição pede `word_timestamps=True` e
+`transcribe._recortar()` refaz os trechos cortando em pausa ≥ 0,6 s ou fim de frase.
 
 ---
 
-## 7 · O Worker
+## 6 · Falantes: diarização e nomes
 
-Arquivo único, sem build, sem dependência. Três rotas:
+`diarize.py` usa duas redes em `local/models/diar/`: segmentação (pyannote 3.0, ONNX) e
+embedding (CAM++). O agrupamento é o botão sensível.
 
-| Rota | O que faz |
+**Como o número de falantes remotos é decidido:**
+
+| Participantes informados na partida | O que acontece |
 |---|---|
-| `POST /api/upload` | Confere `Authorization: Bearer <UPLOAD_TOKEN>`, lê `{titulo, segments}`, resume, insere no D1, devolve `{url}` |
-| `GET /r/<id>` | Busca a linha no D1 e renderiza a página da ata. Se não achar, devolve a landing com "Ata não encontrada" e status 404 |
-| `GET /` | Landing simples com a marca |
+| 1 | não diariza: todo o loopback é aquela pessoa, **com nome confirmado** |
+| 2 ou mais | `num_clusters` = esse número (o limiar nem é consultado) |
+| nenhum | agrupa pelo limiar (`diar_threshold`, padrão **0,7**) e aplica o **teto**: só conta como pessoa o grupo com ≥ 5% da fala **e** ≥ 20 s; se sobrar menos grupos do que o agrupamento abriu, roda de novo cravando esse número (máximo `diar_max_falantes`, 6) |
 
-Qualquer outra coisa é 404 em texto puro.
+**Por quê.** Nas 27 reuniões de jul–set/2026, **todas as 20 gravadas depois de ligar a
+diarização saíram fatiadas** (de 5 rótulos numa reunião de 5 min a 79 em 08/09), porque o
+limiar 0,5 não tinha teto. No corpus sintético (2 vozes, codec Opus 12 kbps), o limiar 0,5
+abriu 10 grupos para 2 vozes; 0,7 + teto acertou a contagem com 2 vozes e com 1. Mas o acerto
+por tempo de fala ficou baixo mesmo com a contagem certa (~0,58 contra um teto de ~0,80 dado
+pelo VAD), e com 1 voz o limiar 0,8–0,9 ainda abriu 2 grupos. **Conclusão: informar os
+participantes é o caminho confiável; o limiar é o plano B e precisa de calibragem em áudio
+real** — `atas.py calibrar <id>` roda vários limiares no áudio guardado de uma reunião.
 
-**O resumo.** `resumir()` manda system + user ao `@cf/meta/llama-3.3-70b-instruct-fp8-fast` com
-`response_format: json_schema` e um esquema fechado (`contexto`, `resumo_executivo`, `temas`,
-`decisoes`, `proximos_passos[{acao, responsavel, prazo}]`, `pendencias`), `max_tokens: 2048`. O
-prompt explica quem é "Você" (o consultor) e manda usar nomes reais quando alguém se identificar na
-conversa. Se o modelo devolver string em vez de objeto, há um fallback que recorta do primeiro `{`
-ao último `}`. Se tudo falhar, o `resumo` vira `null`, a reunião é gravada assim mesmo e a página
-mostra "Resumo por IA indisponível — transcrição completa abaixo": **perder o resumo é aceitável,
-perder a transcrição não é**.
-
-**O identificador é a fechadura.** O id é um `crypto.randomUUID()` sem hífens — 32 hexadecimais
-não adivinháveis — e a página vai com `<meta name="robots" content="noindex">`. Não existe login,
-senha nem expiração: **quem tem o link lê a ata inteira**. É o modelo de "link secreto", e é
-consciente; a senha por reunião continua na lista de coisas a fazer.
-
-**A página.** Capa preta com o símbolo RYZE em marca-d'água, resumo executivo, temas, decisões,
-tabela de próximos passos (com um chip colorido por responsável), pontos em aberto e a transcrição
-em bolhas — dourada e à direita para "Você", cinza e à esquerda para os demais. O CSS é uma
-constante no fim do arquivo e traz um bloco `@media print` com `@page A4`: é ele que faz o PDF do
-`entregavel.py` sair paginado direito, com a transcrição começando em página nova. Trocar a marca é
-trocar as constantes `MARCA`, `SITE` e `LOGO_PATH` no topo.
+**Nomes.** `ata.participantes_iniciais()` sabe sozinho que "Você" é o `meu_nome` e que, com
+um remoto informado, "Participante" é ele. O resto o Claude **deduz** do texto (vocativos,
+apresentações), com a evidência, e fica `confirmado: false` até o Pedro confirmar no `/ata`
+(`atas.py falantes <id> "Participante 1=Valter"`). Vários rótulos podem virar o mesmo nome.
+O entregável ao cliente só mostra nome confirmado; a versão interna mostra "Valter?".
 
 ---
 
-## 8 · Dados: o que é guardado, onde e por quanto tempo
+## 7 · A ata estruturada
 
-| Onde | O que guarda | Quem escreve | Quem lê | Está no git? |
-|---|---|---|---|---|
-| D1, tabela `reunioes` | `id`, `titulo`, `data` (ISO), `segments` (JSON da transcrição inteira), `resumo` (JSON ou `NULL`) | `POST /api/upload` | `GET /r/<id>` | não (é remoto) |
-| `local/out/*.wav` | O áudio bruto | `record.py` | `transcribe.py`, `diarize.py` | não — e é **apagado** no `finally` |
-| `atas-salvas/*.md` | Backup da transcrição com carimbo de tempo | `run.py` | você | não (`.gitignore`) |
-| `atas-salvas/*.html` e `*.pdf` | O entregável do cliente | `entregavel.py` | o cliente | não (`.gitignore`) |
-| `fala-analise/historico.jsonl` | Uma linha por reunião com as métricas de fala — a fonte de verdade do Raio-X | `analise_fala.py` (upsert pela chave `data\|titulo`) | o painel e a nota do Sinapse | não (`.gitignore`) |
-| `fala-analise/raio-x.html` e `*.md` | Painel e relatório por reunião | `analise_fala.py` | você | não (`.gitignore`) |
-| `<vault>/08-CRESCIMENTO/fala-raio-x.md` | Nota auto-gerada no Sinapse, sobrescrita a cada reunião | `analise_fala.py` | o Sinapse | outro repositório |
+**Quem gera.** `estruturar.chamar_claude()` roda o `claude.exe` da extensão do VS Code (o mais
+novo em `~/.vscode/extensions/anthropic.claude-code-*`, ou `claude_cli` no config) com:
+`-p <prompt> --output-format json --json-schema <ESQUEMA_CLAUDE> --tools "" --no-session-persistence
+--strict-mcp-config --setting-sources ""`, a transcrição no stdin e o cwd numa pasta
+temporária. Sem ferramentas, sem MCP, sem CLAUDE.md, sem chave de API (usa o login do Claude
+Code). Medido em 30/09: reunião real de 66 min (57 mil caracteres) → 100 s, US$ 0,49 de custo
+de lista; 28 itens, **28 com a citação localizada**.
 
-Não há migração: `schema.sql` é `CREATE TABLE IF NOT EXISTS` e a tabela nunca mudou. Também não há
-rota de exclusão — **o áudio some, mas a transcrição fica no D1 para sempre**, até alguém apagar a
-linha à mão (receita em 11).
+**O prompt** (`VERSAO_PROMPT`, hoje "2") dá o contexto (data com dia da semana, tipo, papel
+do Pedro, participantes informados, o aviso de que a diarização erra) e sete regras: citação
+literal de uma fala + timestamp em todo item; null para o que não foi dito; prazo em
+AAAA-MM-DD **com a expressão dita** copiada; só as falas de "Você" são do Pedro; decisão ≠
+sugestão; nomes só com evidência.
 
-**O Raio-X mede só o "Você"**: fatia de fala, turnos, vocabulário único, pedidos de confirmação
-("né?", "entendeu?", "certo?"), muletas por mil palavras, bordões, `acho que` e as palavras de
-conteúdo mais repetidas. É explicitamente uso interno, e o painel diz isso em duas linhas
-diferentes.
+**A auditoria** (`ata.auditar`, roda na criação e em todo `render`):
+
+| Conferência | Se falhar |
+|---|---|
+| a citação está numa fala da transcrição (normalizada, **com limite de palavra**; reticências separam partes e TODAS precisam estar na mesma fala) | `verificado: false` + lacuna; não vai ao cliente |
+| a fala achada está a ≤ 5 s do `t` informado | `t` corrigido, anotado em `problemas` |
+| `prazo`/`revisar_em`: a expressão dita aparece **na transcrição** a ≤ 2 min da fala (a citação não conta: quem a escreve é o Claude) **e** a data bate — entre a reunião e 400 dias; "dia N" = o próximo dia N (≤ 62 dias); dia da semana confere (≤ 14 dias); "N/M" confere | o campo vira null (lacuna) |
+| `dono`/`quem` aparece nos participantes ou na transcrição | anotado em `problemas` |
+
+Campo preenchido pelo Pedro depois da reunião entra em `manual: ["prazo"]` e não é
+auditado. **Lacunas** (calculadas, nunca escritas à mão): encaminhamento sem dono ou prazo,
+decisão sem data de revisão, falante relevante sem nome ou a confirmar, item sem origem.
+
+**Schema `atas/ata@1`** — ver o cabeçalho de `local/ata.py`. As decisões têm o mesmo formato
+do log `qa-parresia/rotinas/decisoes.jsonl` mais a origem: `atas.py decisoes <id>` imprime as
+linhas prontas, para o log de decisões e o painel de PO consumirem.
+
+**Renderização** (`render.py`): decisões e encaminhamentos primeiro, resumo em seguida,
+temas/perguntas/riscos/lacunas e a transcrição recolhidos (`<details>`, abertos no PDF).
+Interna = neutra, "Atas · uso interno". Entregável = marca RYZE, só verificado, só nome
+confirmado (também em `dono`/`quem` escritos por nome), sem lacunas; resumo e contexto — prosa
+que a auditoria não confere — só entram quando todos os falantes relevantes estão confirmados.
+
+---
+
+## 8 · Dados: o que fica onde, e por quanto tempo
+
+| Onde | O quê | Quanto tempo | No git? |
+|---|---|---|---|
+| `atas-salvas/<id>/sessao.json` | contexto, estado, etapas, avisos, publicação (com a senha) | sempre | não |
+| `atas-salvas/<id>/*.pcm` | áudio cru durante a gravação | até o Opus conferir | não |
+| `atas-salvas/<id>/audio/*.opus` | áudio compactado (~12 MB/100 min/canal) | **`audio_reter_dias` = 30**, depois apagado | não |
+| `atas-salvas/<id>/transcricao.json`, `ata.json`, `ata.*`, `entregavel.*` | transcrição, ata e renderizações | sempre (local) | não |
+| `atas-salvas/<id>/ao-vivo.md` | transcrição preliminar, se ligada | sempre (local) | não |
+| D1 `reunioes` (Worker) | **só cliente**: HTML do entregável, hash da senha, expiração | **`publicacao_reter_dias` = 90** (cron diário) | não |
+| D1 — linhas da v1 | segments + resumo das atas antigas (26 das 27 têm link no backup .md) | **sem prazo** até alguém decidir (§14) | não |
+| `fala-analise/` | histórico e painel do Raio-X (com títulos) | sempre (local) | não |
+| `sinapse/08-CRESCIMENTO/fala-raio-x.md` | métricas por **data + tipo**, sem título | sobrescrita a cada reunião | outro repo |
+
+**Parresia, carreira e pessoal nunca sobem.** A única coisa que sai da máquina numa reunião
+interna é a transcrição indo ao Claude para ser estruturada — o mesmo que acontece quando o
+Pedro cola texto no chat. Para nem isso sair, desmarque "Gerar a ata com o Claude" em "Mais
+opções".
 
 ---
 
 ## 9 · Configuração
 
-`local/config.json` (fora do git; o modelo é `local/config.example.json`):
+`local/config.json` por cima dos padrões de `local/config.py`. **Nenhuma chave é
+obrigatória para gravar.**
 
-| Chave | Obrigatória | Padrão | Para que serve |
-|---|---|---|---|
-| `worker_url` | sim | — | Raiz do Worker; `upload.py` acrescenta `/api/upload` |
-| `upload_token` | sim | — | Tem de ser **idêntico** ao secret `UPLOAD_TOKEN` do Worker |
-| `model` | não | `small` | Tamanho do modelo Whisper (`medium` = mais preciso e bem mais lento) |
-| `diarizar` | não | `true` | Liga/desliga a separação dos participantes remotos |
-| `diar_threshold` | não | `0.5` | Seção 6 |
-| `diar_num_speakers` | não | `-1` | Seção 6 |
-| `microfone` | não | — | Trecho do nome do microfone preferido; **lido pelo código, ausente do `config.example.json`** |
-| `diar_python` | não | `C:\Users\olive\.venvs\diar\Scripts\python.exe` | Interpretador da diarização; **lido pelo código, ausente do `config.example.json`** |
-
-No lado da Cloudflare só existe um segredo, `UPLOAD_TOKEN`, criado por
-`npx wrangler secret put UPLOAD_TOKEN`. O `database_id` que está no `wrangler.toml` versionado é
-identificador, não credencial — sem a conta e sem o token, ele não abre nada.
-
-**Ambientes:** só existe um. Não há homologação; `npx wrangler deploy` publica direto em
-`atas.desbravando-utv.workers.dev`, na mesma conta Cloudflare que hospeda os Workers do
-Desbravando.
+| Chave | Padrão | Para que serve |
+|---|---|---|
+| `meu_nome` | `Pedro` | nome de "Você" na ata |
+| `worker_url`, `upload_token` | — | só para publicar cliente; o token = secret `UPLOAD_TOKEN` do Worker |
+| `model` | `auto` | `auto` = turbo na GPU / small na CPU; ou um nome do faster-whisper |
+| `dispositivo` | `auto` | `auto` · `cuda` · `cpu` |
+| `vocabulario` | `true` | hotwords de `vocabulario.json` + participantes |
+| `idioma` | `pt` | idioma do Whisper (os testes usam `en`) |
+| `diarizar` | `true` | liga a separação dos remotos |
+| `diar_threshold` | `0.7` | §6 |
+| `diar_max_falantes` | `6` | teto |
+| `diar_python` | venv `diar` | interpretador da diarização |
+| `microfone` | — | trecho do nome do microfone preferido |
+| `estruturar` | `true` | chamar o Claude no fim |
+| `claude_cli`, `claude_modelo`, `claude_timeout_s` | achado sozinho · padrão da conta · 1200 | §7 |
+| `audio_reter_dias` | `30` | retenção do áudio local |
+| `publicacao_reter_dias` | `90` | expiração da página do cliente |
+| `ao_vivo`, `ao_vivo_janela_s` | `false`, `30` | §12 |
 
 ---
 
-## 10 · Como conferir
+## 10 · O Worker
 
-**Não há testes automatizados neste repositório** — nem `pytest`, nem suíte no Worker, nem
-`package.json` com script de teste. A conferência é manual, e cada peça foi feita para poder ser
-executada sozinha:
+Arquivo único, sem build. **Só publica** — não resume nem renderiza (a v1 fazia as duas
+coisas; o Workers AI saiu).
 
-| Comando | Confere |
-|---|---|
-| `python record.py` | Que os dois dispositivos abrem e que o RMS dos dois lados não está zerado. Grava em `out/` até ENTER |
-| `python transcribe.py` | Transcreve os WAV que já estiverem em `out/` e imprime os segmentos em JSON |
-| `python diarize.py <wav> [threshold] [num_speakers]` | Roda a diarização isolada e mostra os turnos — é aqui que se calibra o limiar. **Precisa do Python do venv `diar`** |
-| `python entregavel.py <url> <caminho_base_sem_extensao>` | Baixa e imprime o PDF de uma ata já publicada |
-| `npx wrangler tail` (em `worker/`) | O log ao vivo do Worker: é onde aparece a falha do Workers AI que a página engole |
+| Rota | Auth | O que faz |
+|---|---|---|
+| `POST /api/atas` | Bearer | `{chave, titulo, html, senha, expira_dias}`; **senha obrigatória**; **idempotente por `chave`** (id da sessão): republicar atualiza a mesma URL |
+| `GET /api/atas` | Bearer | lista id, título, data, expiração, se tem senha, se é da v1 |
+| `PATCH /api/atas/<id>` | Bearer | troca senha e/ou expiração (serve para proteger as atas da v1) |
+| `DELETE /api/atas/<id>` | Bearer | apaga |
+| `GET /r/<id>` | senha | sem cookie válido → formulário; com → a página |
+| `POST /r/<id>` | — | confere a senha, grava cookie `ata_<id>` = `emitido.HMAC(id:hash:emitido)` (`Path=/r/<id>`, HttpOnly, Secure); os 30 dias são conferidos no servidor, e trocar a senha invalida todos |
+| cron `17 9 * * *` | — | apaga o que passou de `expira_em` |
 
-Antes de subir uma mudança no Worker, o mínimo honesto é: `npx wrangler deploy`, abrir uma ata
-antiga em `/r/<id>` e conferir que a página ainda renderiza resumo, tabela e transcrição.
+**Senha**: 8 caracteres de um alfabeto sem ambíguos (≈ 40 bits), gerada na máquina, guardada
+no `sessao.json`, como `sha256(sal:senha)` no D1. Aleatória e longa o bastante para o risco ser
+adivinhação online, não quebra de hash — daí SHA-256 e não PBKDF2, que estouraria o limite de
+CPU do plano gratuito. Erro de senha custa 400 ms.
+**Cabeçalhos**: CSP `default-src 'none'` (a página não tem script), `noindex`, `no-store`,
+`no-referrer`, `frame-ancestors 'none'`.
+**Conta fixada** no `wrangler.toml` (`account_id` da ryzecode08): sem isso o deploy vai para a
+conta do login ativo (§14).
 
 ---
 
 ## 11 · Receitas
 
-**Gravar uma reunião.** Deixe o áudio da chamada saindo pelo alto-falante **padrão** do Windows,
-dois cliques em `local/gravar.bat`, ENTER para parar, digite o título. O link sai copiado na área
-de transferência e o PDF abre sozinho.
+Todas com `$A = "C:\Users\olive\.venvs\faster-whisper\Scripts\python.exe C:\Users\olive\Projetos\atas\local\atas.py"`
+e `Invoke-Expression "$A <comando>"`.
 
-**O gravador não abre / a janela some.** Ela não some mais: o `pause` do `.bat` segura a janela e o
-traceback fica na tela. Se o erro for um `AssertionError` seco do `soundcard`, é o microfone USB
-(seção 14) — o `record.py` já tenta os outros dispositivos sozinho e avisa qual escolheu.
+**Gravar sem a janela.** `gravar` (pergunta o contexto no terminal).
 
-**Corrigir "78 participantes".** Abra `local/config.json` e acrescente as chaves — elas
-provavelmente não estão lá:
-```json
-"diarizar": true,
-"diar_threshold": 0.8,
-"diar_num_speakers": -1
-```
-Suba o `diar_threshold` até parar de fatiar (o padrão 0.5 é baixo demais para voz de loopback).
-Se você **sabe** quantas pessoas remotas havia, é mais direto cravar `"diar_num_speakers": 2` —
-com um inteiro ≥ 1 o threshold nem é consultado. Para calibrar sem regravar, guarde um
-`loopback.wav` de teste e rode `python diarize.py loopback.wav 0.8 -1` com o Python do venv `diar`.
+**O PC travou / a janela fechou.** Abra o Atas: ele oferece gerar a ata. Ou `retomar`.
 
-**Desligar a diarização de vez.** `"diarizar": false` no `config.json`. Todo mundo do outro lado
-volta a ser "Participante".
+**A ata saiu `pendente` (Claude falhou).** `processar <id> --forcar estrutura`.
 
-**Melhorar a qualidade da transcrição.** `"model": "medium"` no `config.json`. Roda em CPU com
-`int8`, então é bem mais lento; o modelo é baixado na primeira vez e fica em cache.
+**Retranscrever com outro modelo.** Ponha `"model": "..."` no config e
+`processar <id> --forcar transcricao,estrutura` (só enquanto o áudio existir: 30 dias).
 
-**Trocar a marca da página.** Constantes `MARCA`, `SITE` e `LOGO_PATH` no topo de
-`worker/worker.js`, e as variáveis `--gold*` no CSS do fim do arquivo. Depois `npx wrangler deploy`.
+**Nomear falantes.** `falantes <id> "Participante 1=Valter" "Participante 2=Valter"`, depois
+`confirmar <id>`. Regera tudo e republica a página do cliente se ela já estava no ar.
 
-**Trocar o modelo do resumo.** Constante `MODELO` em `worker/worker.js`. Modelos menores respondem
-mais rápido e resumem pior; o esquema JSON continua valendo.
+**Calibrar a diarização em voz real.** `calibrar <id> [--limiares 0.5,0.7,0.9]` numa reunião
+com áudio guardado, com o número real de pessoas conhecido. Ajuste `diar_threshold`.
 
-**Apagar uma ata do ar.** Não há rota para isso. Em `worker/`:
+**Achar algo dito.** `buscar <termo> [--pessoa X] [--projeto P] [--tipo T]`.
+
+**Publicar / tirar do ar.** `publicar <id>` (só cliente; recusa página já apagada sem `--forcar`
+e reunião antiga com tipo inferido), `despublicar <id>`, `publicadas`.
+
+**Corrigir o tipo/projeto.** `tipo <id> cliente --projeto instituto-automacao` (marca a
+classificação como confirmada; mudar para interno tira a página do ar).
+
+**Homologação do Worker (uma vez).** Em `worker/`:
 ```powershell
-npx wrangler d1 execute atas --remote --command "DELETE FROM reunioes WHERE id='<id>'"
+npx wrangler d1 create atas-homolog          # cole o database_id em [env.homolog] do wrangler.toml
+npx wrangler d1 migrations apply atas-homolog --remote --env homolog
+npx wrangler secret put UPLOAD_TOKEN --env homolog
+npx wrangler deploy --env homolog            # → atas-homolog.desbravando-utv.workers.dev
 ```
-O `.md`, o `.html` e o `.pdf` continuam em `atas-salvas/` — apague à mão se for o caso.
+**Deploy em produção.** `npm test` → `npx wrangler deployments list` (conferir a conta e a
+versão no ar) → `npx wrangler d1 migrations apply atas --remote` → `npx wrangler deploy` →
+abrir uma ata antiga em `/r/<id>` e uma nova.
 
-**Montar tudo numa máquina nova.** O passo a passo está no README (criar o D1, rodar o
-`schema.sql`, pôr o secret, `npx wrangler deploy`) e, do lado local, os dois venvs da seção 5 mais
-os modelos ONNX em `local/models/diar/`.
+**Proteger/expirar as atas da v1 que estão no ar** (depois do deploy da v2). `legado-proteger`
+mostra o plano — apagar as internas (hoje 4: Parresia e pessoal); senha nova + 90 dias para as
+de cliente (22) — e só executa com `--aplicar`. As senhas novas ficam no `sessao.json` de cada uma.
 
-**Republicar uma ata perdida.** Não existe caminho pronto: o `upload.py` só é chamado pelo
-`run.py`, e o `.md` do backup não volta a virar `segments`. Guarde o link.
-
----
-
-## 12 · Vocabulário interno
-
-| Termo | Significa |
-|---|---|
-| **Você** | O falante que veio do microfone — o Pedro. É o rótulo, não uma pessoa configurável |
-| **Participante** | Tudo o que veio do loopback: o outro lado da chamada, mixado num canal só |
-| **Loopback** | A captura do que **sai** pelo alto-falante. É como o sistema ouve o cliente sem plugin nem bot na reunião |
-| **Turno** | Um intervalo `{início, fim, locutor}` devolvido pela diarização. Não tem texto |
-| **Segmento** | Um trecho transcrito `{speaker, start, end, text}`. É a moeda que circula entre todos os módulos |
-| **Diarização** | Separar "quem falou" dentro de um único canal de áudio, pela voz |
-| **Limiar (`threshold`)** | A distância máxima para duas vozes serem consideradas a mesma pessoa. Quanto maior, menos gente o sistema enxerga |
-| **Entregável** | O `.pdf` (ou `.html`) que vai ao cliente, sem link e sem URL impressa |
-| **Raio-X da Fala** | A análise pessoal do Pedro sobre a própria fala. Interna, jamais enviada |
-| **Ata** | A página publicada em `/r/<id>`: resumo + decisões + próximos passos + transcrição |
+**Montar numa máquina nova.** README, seção "Montar do zero".
 
 ---
 
-## 13 · Status em 09/09/2026
+## 12 · O /ata e o ao vivo
+
+**`/ata`** (skill em `claude/skills/ata/SKILL.md`, ligada em `~/.claude/skills/ata`): acha a
+reunião → confirma quem é quem → fecha lacunas (com `manual`) → compara com a reunião anterior
+do mesmo projeto (`anterior <id>`) → **propõe**, pelo tipo: memória do Claude, log de decisões
+(`decisoes <id>`), Sinapse (nunca para Parresia) e cards de ClickUp (só pelos wrappers com o
+token do Pedro, nunca pelo MCP). Nada é publicado sem o sim dele, na hora.
+
+**Ao vivo (MVP, R9).** Com "Transcrição ao vivo" marcada, `ao_vivo.py` transcreve a cada 30 s
+o áudio novo dos dois `.pcm` com o `small` na GPU e acrescenta as falas em `ao-vivo.md`.
+`atas.py ao-vivo` dá o caminho, e o Claude lê durante a reunião. Sem GPU fica desligado (na CPU
+disputaria processador com a chamada). Não substitui a transcrição final.
+
+---
+
+## 13 · Status em 30/09/2026
 
 | Área | Estado | Onde conferir |
 |---|---|---|
-| Captura (mic + loopback) | **Pronta**, com fallback de dispositivo e aviso de canal mudo | `local/record.py` |
-| Transcrição offline | **Pronta.** faster-whisper 1.2.1, modelo `small`, CPU/int8, Python 3.14.6 | `local/transcribe.py` |
-| Diarização dos remotos | **Funciona, mal calibrada.** sherpa-onnx 1.13.4 no venv `diar` (3.12.13); os modelos ONNX estão na máquina | seções 6 e 14 |
-| Worker, resumo e página | **Prontos** e publicados; um arquivo, sem build | `worker/worker.js` |
-| Entregável PDF/HTML | **Pronto**, mas depende do upload ter dado certo (a página vem do Worker) | `local/entregavel.py` |
-| Raio-X da Fala + Sinapse | **Pronto**; a nota no vault é best-effort e silenciosa se o vault não existir | `local/analise_fala.py` |
-| Senha por reunião | **Não existe.** O link é a única barreira | seção 7 |
-| Exclusão de ata | **Não existe rota.** Só SQL à mão | seção 11 |
-| Testes automatizados | **Não existem** em nenhum dos dois lados | seção 10 |
-| Homologação do Worker | **Não existe.** `deploy` vai direto para produção | seção 9 |
-| Documentação no código | Os 9 fontes (7 `.py`, o `.bat` e o Worker) abrem com um cabeçalho dizendo o que são e por quê; as decisões não óbvias estão comentadas no lugar | `local/`, `worker/worker.js` |
+| Gravação em blocos + retomada + checagem + indicador | **pronta**, testada com dispositivo falso (inclusive queda e reabertura) | `record.py`, `tests/test_gravacao.py` |
+| GPU + turbo + vocabulário + recorte | **pronta**, medida (§5) | `transcribe.py`, `tests/test_fumaca.py` |
+| Diarização com teto e nº informado | **pronta**; limiar **calibrado só em sintético** | §6, `atas.py calibrar` |
+| Ata estruturada pelo Claude + auditoria | **pronta**, testada numa reunião real de 66 min | `estruturar.py`, `ata.py` |
+| Render local, PDF sem upload, marca por tipo | **pronto** | `render.py` |
+| Worker v2 (senha, expiração, exclusão, idempotência) | **pronto e testado localmente (10 testes)**; **não publicado** (§14) | `worker/` |
+| /ata, índice (`buscar`), log de decisões | **prontos** | `claude/skills/ata`, `atas.py` |
+| Raio-X sem título no Sinapse | **pronto**; nota regravada | `analise_fala.py` |
+| 27 atas antigas | **importadas** como sessões `legado`, tipo/projeto **inferidos**; sem áudio; ainda não estruturadas | `legado.py` |
+| Testes | 51 em Python + 10 no Worker | `tests/`, `worker/test/` |
+| Ao vivo | MVP pronto, **não testado numa reunião real** | `ao_vivo.py` |
+| Domínio próprio | adiado | README da v1 / memória |
 
 ---
 
 ## 14 · Armadilhas conhecidas
 
-- **O limiar da diarização fatia uma pessoa em dezenas.** Em 08/09/2026 um único participante
-  remoto virou **78 "Participantes"** na ata. O `diar_threshold` padrão (`0.5`) é baixo demais para
-  voz que passou por codec de chamada e saiu pelo loopback: a mesma pessoa soa "diferente o
-  bastante" a cada trecho, e o agrupamento abre um cluster novo. **Não há teto de locutores** em
-  `_rotular_participantes` — o que o sherpa devolver, vira rótulo. O botão está no
-  `local/config.json` (`diar_threshold`, ou `diar_num_speakers` para cravar a quantidade), e o
-  `config.json` em uso **não tem essas chaves**, então o padrão do código é o que vale. Receita em 11.
-- **Microfone USB que não reporta o formato EXTENSIBLE derruba o gravador.** O `soundcard` só
-  falha na hora de abrir o dispositivo, não ao listar, e falha com um `assert` sem mensagem
-  (`ppMixFormat[0][0].Format.wFormatTag == 0xFFFE`). Aconteceu em 03/09/2026 com o
-  `Microphone (AB13X USB Audio)`. Já há defesa: `record.py::_abre()` testa cada dispositivo
-  abrindo de verdade e escolhe **o primeiro que abre**, avisando na tela quando não é o padrão do
-  Windows. O mesmo vale para o loopback.
-- **Janela que fecha engolindo o traceback transforma bug em mistério.** É por isso que o
-  `gravar.bat` tem `pause` no caminho de erro. Não tire.
-- **Sem User-Agent de navegador, o Cloudflare barra o `urllib` com 403 "error code: 1010"** antes
-  de o pedido chegar ao Worker (Bot Fight Mode). Tanto o `upload.py` quanto o `entregavel.py`
-  mandam um UA de Chrome por causa disso.
-- **O Edge headless não imprime PDF se já estiver aberto** — ele faz rendezvous com a instância em
-  uso e sai sem produzir arquivo. Por isso o Chrome vem primeiro na lista de navegadores do
-  `entregavel.py`, e por isso ele usa um `--user-data-dir` descartável.
-- **O resumo enxerga no máximo 40 000 caracteres** da transcrição (`.slice(0, 40000)` no Worker).
-  A transcrição completa é guardada e exibida, mas numa reunião muito longa o resumo executivo
-  ignora o final.
-- **A falha do Workers AI é silenciosa.** O `catch` no Worker zera o resumo e não registra o
-  motivo; na tela só sobra "Resumo por IA indisponível". Para saber o que houve, `npx wrangler tail`
-  **durante** o upload.
-- **Quem tem o link tem a ata.** `noindex` não é controle de acesso. Cuidado ao encaminhar; o PDF
-  existe justamente para não precisar mandar o link.
-- **O áudio some, a transcrição não.** O `finally` apaga os `.wav`, mas o texto fica no D1 sem
-  prazo e sem rota de exclusão.
-- **O título da reunião vaza para o Sinapse.** A nota `08-CRESCIMENTO/fala-raio-x.md` lista as
-  últimas oito reuniões **pelo título** — que costuma ter o nome do cliente. Métrica é interna, mas
-  o vault é outro repositório: confira se ele não é público antes de sincronizar.
-- **Sem upload não há PDF.** O `entregavel.py` baixa a página **do Worker**; se o `POST` falhou,
-  sobra só o `.md`. O entregável é offline para o cliente, não para você.
-- **`transcribe.py` e `record.py` rodam standalone, `diarize.py` não roda no venv principal.**
-  Chamar `python diarize.py` com o Python do faster-whisper falha no `import sherpa_onnx`.
-- **Recriar o banco não é preciso, mas cuidado:** `schema.sql` é idempotente
-  (`CREATE TABLE IF NOT EXISTS`), então rodá-lo de novo não apaga nada — mas também não migra nada
-  se um dia a tabela mudar.
+- **Login do wrangler trocado.** Desde 28/09/2026 existe `~/.wrangler/`, e o wrangler 4.145
+  prefere esse diretório ao perfil XDG: o login padrão desta máquina virou a conta **pessoal**
+  (oliveiramichaelpedro), e o truque `XDG_CONFIG_HOME` parou de funcionar. O `atas` tem
+  `account_id` fixado, então um deploy com o login errado **falha** (erro 10000) em vez de ir
+  para a conta errada. `eventos`, `minidrive`, `mesa-arton` e `bailado-da-sanfona` **não têm**
+  `account_id` fixado.
+- **O turbo com vocabulário junta trechos** (§5). Não tire o `word_timestamps`.
+- **Limiar de diarização sem teto fatia uma pessoa em dezenas** (§6). O teto e o número
+  informado existem por isso.
+- **Microfone USB sem formato EXTENSIBLE derruba o `soundcard`** num `assert` seco
+  (`Microphone (AB13X USB Audio)`, 03/09/2026). `record._abre()` testa abrindo de verdade e usa
+  o primeiro que abre, avisando.
+- **Sem User-Agent de navegador o Cloudflare barra o `urllib`** com 403 "error code: 1010"
+  (Bot Fight Mode). `upload.py` manda UA de Chrome.
+- **O Edge headless não imprime se já estiver aberto.** Chrome primeiro, perfil descartável.
+- **`diarize.py` não roda no venv principal** (`import sherpa_onnx` falha).
+- **O `soundcard` preenche silêncio do loopback com zeros** medindo o tempo; a linha do tempo
+  só escorrega se o dispositivo cair — e aí `Canal._preencher_lacuna()` compensa.
+- **As 27 atas da v1 continuam no D1 sem senha e sem prazo** (quem tem o link lê), inclusive a
+  de 22/09 da Parresia (frota). Decidir: proteger com senha, expirar ou apagar.
+- **O vault guarda os títulos antigos no histórico do git.** A nota nova não tem títulos, mas
+  os commits anteriores do `sinapse` têm. Reescrever histórico é decisão do Pedro.
+- **Tk sem DPI fica borrado** na tela do XPS; `app._dpi_nitido()` e `_p()` (espaço escalado)
+  existem por isso.
+- **Os PCM ficam abertos pelo gravador**: não mova a pasta da reunião enquanto grava.
+- **`os.replace` no Windows falha se alguém estiver lendo o arquivo** (WinError 5). O
+  `sessao.json` é escrito com temporário de nome único, lock e novas tentativas.
+- **Escape em script gerado por script.** Duas vezes nesta v2 um `\b` ou `\x00` escrito
+  por heredoc virou caractere de controle dentro do `.py`. Edite fonte com o editor.
+- **Revisão adversarial de 30/09/2026** achou 16 pontos (prazo inventado passando pela
+  auditoria, nome não confirmado indo ao cliente, publicação automática com tipo herdado,
+  página apagada voltando, retenção apagando áudio de ata não pronta, dois processamentos
+  simultâneos perdendo áudio…). Os confirmados foram corrigidos e ganharam teste.
+
+---
+
+## 15 · O que mudou da v1 para a v2
+
+| v1 (jul–set/2026) | v2 (30/09/2026) |
+|---|---|
+| áudio na memória, WAV só no fim — um crash perdia tudo | blocos no disco, batida, retomada |
+| `small` na CPU | `large-v3-turbo` na GPU, CPU como reserva |
+| diarização sem teto (até 79 rótulos) | nº informado, ou limiar 0,7 + teto |
+| resumo em prosa pelo Llama 70B, 40 mil caracteres, falha silenciosa | `ata.json` pelo Claude, sem corte, auditado, falha registrada |
+| página e PDF vinham do Worker; sem upload não havia PDF | tudo renderizado na máquina |
+| toda ata subia, com marca RYZE | só cliente sobe; interno fica local e neutro |
+| link público eterno | senha por ata, expiração de 90 dias, rota de exclusão |
+| Sinapse listava reuniões pelo título | data + tipo |
+| sem testes, deploy direto em produção | 61 testes, homologação configurada |

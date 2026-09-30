@@ -18,3 +18,7 @@ worker/.wrangler/
 # Python cache
 __pycache__/
 *.pyc
+
+# v2
+local/atas.log
+.pytest_cache/
