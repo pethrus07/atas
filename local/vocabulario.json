@@ -1,0 +1,17 @@
+{
+  "_para_que": "Termos que o Whisper recebe como hotwords, por tipo e por projeto (transcribe.vocabulario). Os participantes informados na partida entram sozinhos. Mantenha curto: o limite é 40 termos por reunião.",
+  "sempre": ["Claude", "Sinapse", "GitHub"],
+  "parresia": ["Parresia", "Mettria", "Koynus", "Unio", "Registratto", "Skopia", "ClickUp", "PostHog", "MainWP", "Ricardo", "Guilherme", "Matheus", "Lucas", "Philipe", "Gustavo", "backlog", "sprint", "staging", "homologação", "DoR", "DoD", "SUP"],
+  "cliente": ["RYZE"],
+  "carreira": ["Product Owner", "PO", "Ricardo"],
+  "pessoal": [],
+  "projetos": {
+    "instituto-automacao": ["Valdir", "Instituto Automação", "Celiware", "Giro"],
+    "commagente": ["Valdir", "Commagente", "WhatsApp"],
+    "celiware-ihm": ["Valdir", "Celiware", "IHM", "APK"],
+    "pdq-cheesebites": ["Valdir", "Cheese Bites", "PDQ"],
+    "desbravando": ["Desbravando", "UTV", "Wix"],
+    "retifica": ["Renatinho", "Gustavo", "retífica", "OS"],
+    "bailado-da-sanfona": ["Henrique", "Balaio", "forró", "fole de oito baixos", "UFPB"]
+  }
+}
