@@ -1,185 +1,298 @@
 /**
- * Atas — Worker Cloudflare (arquivo único, sem build e sem dependência).
+ * Atas — Worker Cloudflare (arquivo único, sem build e sem dependência de runtime).
  *
- * É a metade remota do sistema: a máquina do Pedro só sabe transcrever, então o
- * que precisa de nuvem — o resumo por IA, a persistência e um endereço para
- * mandar ao cliente — vive aqui.
+ * v2 (30/09/2026): o Worker virou só PUBLICADOR. Resumo e página são feitos na
+ * máquina do Pedro (Claude + render.py); aqui só chega o entregável de reunião de
+ * CLIENTE, já em HTML. Reunião interna (Parresia, carreira, pessoal) não sobe.
  *
- *  - POST /api/upload : recebe a transcrição (Bearer token), resume com Workers AI,
- *                       guarda no D1 e devolve o link da página.
- *  - GET  /r/<id>     : renderiza a página branded da ata (pública p/ quem tem o link).
- *  - GET  /           : landing simples.
+ *  - POST   /api/atas        (Bearer) guarda/atualiza {chave, titulo, html, senha, expira_dias}
+ *  - GET    /api/atas        (Bearer) lista o que está publicado
+ *  - PATCH  /api/atas/<id>   (Bearer) troca senha e/ou expiração (serve às atas antigas)
+ *  - DELETE /api/atas/<id>   (Bearer) apaga
+ *  - GET    /r/<id>          página; se tiver senha, pede a senha antes
+ *  - POST   /r/<id>          confere a senha e grava um cookie só daquela ata
+ *  - GET    /                landing
+ *  - cron diário             apaga o que expirou
  *
- * Tudo num arquivo só de propósito: sem package.json não há build, não há
- * node_modules e `npx wrangler deploy` é o processo inteiro. O CSS mora numa
- * constante no fim — inclusive o bloco @media print, que é o que faz o PDF
- * gerado pelo entregavel.py sair paginado direito.
+ * Atas publicadas antes da v2 (coluna html vazia) continuam renderizando pelo
+ * código antigo, no fim deste arquivo, a partir de segments + resumo.
  *
- * Bindings (wrangler.toml): AI (Workers AI) e DB (D1). Segredo: UPLOAD_TOKEN.
+ * Bindings (wrangler.toml): DB (D1). Segredo: UPLOAD_TOKEN.
  */
 
-const MARCA = "RYZE";                        // identidade visual RYZE
+const MARCA = "RYZE";
 const SITE = "ryzecode.com.br";
-const MODELO = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"; // 70B p/ resumo executivo mais rico
+const MAX_HTML = 1_800_000; // D1 guarda até ~2 MB por linha
 
-// Símbolo RYZE (seta ascendente). fill = cor; h = altura CSS (ex.: "34px").
 const LOGO_PATH =
   "M308.484 282.06L244.072 357.593H211L231.18 392H350.77L400 520H244.159L171.652 352.605L177.931 342.661L225 254.736L211.896 226.997L191.439 180.558L159.957 267.483L127.315 354.301L112.868 394.729H139.992L194.254 520H0L200 0L308.484 282.06Z";
 function logo(fill, h) {
   return `<svg viewBox="0 0 400 520" fill="none" xmlns="http://www.w3.org/2000/svg" style="height:${h};width:auto;display:block"><path d="${LOGO_PATH}" fill="${fill}"/></svg>`;
 }
 
-// Esquema fechado entregue ao modelo em `response_format`. Existe para o resumo
-// vir como DADO e não como prosa: sem ele, cada reunião voltaria com um texto de
-// formato diferente e a página teria de adivinhar onde estão as decisões.
-const ESQUEMA = {
-  type: "object",
-  properties: {
-    contexto: { type: "string" },
-    resumo_executivo: { type: "string" },
-    temas: { type: "array", items: { type: "string" } },
-    decisoes: { type: "array", items: { type: "string" } },
-    proximos_passos: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          acao: { type: "string" },
-          responsavel: { type: "string" },
-          prazo: { type: "string" },
-        },
-        required: ["acao", "responsavel", "prazo"],
-      },
-    },
-    pendencias: { type: "array", items: { type: "string" } },
-  },
-  required: ["resumo_executivo", "decisoes", "proximos_passos"],
+// A página não tem script nenhum; a CSP garante que continue assim mesmo que um
+// texto de transcrição mal escapado tente injetar algum.
+const CABECALHOS_PAGINA = {
+  "Content-Type": "text/html; charset=utf-8",
+  "Cache-Control": "no-store",
+  "X-Robots-Tag": "noindex, nofollow",
+  "Referrer-Policy": "no-referrer",
+  "X-Content-Type-Options": "nosniff",
+  "Content-Security-Policy":
+    "default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; " +
+    "font-src https://fonts.gstatic.com; img-src data:; form-action 'self'; frame-ancestors 'none'",
 };
 
 export default {
   async fetch(req, env) {
     const url = new URL(req.url);
     const path = url.pathname;
+    try {
+      if (path === "/api/atas" || path.startsWith("/api/atas/")) {
+        if (!autorizado(req, env)) return Response.json({ erro: "não autorizado" }, { status: 401 });
+        const id = path.slice("/api/atas/".length);
+        if (req.method === "POST" && path === "/api/atas") return publicar(req, env, url);
+        if (req.method === "GET" && path === "/api/atas") return listar(env);
+        if (req.method === "PATCH" && id) return alterar(req, env, id);
+        if (req.method === "DELETE" && id) return apagar(env, id);
+        return Response.json({ erro: "método não suportado" }, { status: 405 });
+      }
+      if (path.startsWith("/r/")) {
+        const id = path.slice(3);
+        if (req.method === "GET") return verAta(req, env, id);
+        if (req.method === "POST") return entrar(req, env, id);
+      }
+      if (req.method === "GET" && path === "/") return pagina200(landing());
+      return new Response("Não encontrado", { status: 404 });
+    } catch (e) {
+      // Nada de falha silenciosa: o motivo vai para o log (wrangler tail) e para
+      // quem chamou a API; a página pública só diz que deu erro.
+      console.error("erro", path, e && e.stack ? e.stack : e);
+      if (path.startsWith("/api/")) return Response.json({ erro: String(e) }, { status: 500 });
+      return new Response("Erro interno", { status: 500 });
+    }
+  },
 
-    if (req.method === "POST" && path === "/api/upload") {
-      return upload(req, env, url);
-    }
-    if (req.method === "GET" && path.startsWith("/r/")) {
-      return verAta(path.slice(3), env);
-    }
-    if (req.method === "GET" && path === "/") {
-      return html(landing(), 200);
-    }
-    return new Response("Não encontrado", { status: 404 });
+  async scheduled(_evt, env) {
+    const r = await env.DB.prepare(
+      "DELETE FROM reunioes WHERE expira_em IS NOT NULL AND expira_em < ?"
+    ).bind(new Date().toISOString()).run();
+    console.log("retenção: apagadas", r.meta && r.meta.changes);
   },
 };
 
-async function upload(req, env, url) {
-  // Autenticação simples por token compartilhado.
+function autorizado(req, env) {
   const auth = req.headers.get("Authorization") || "";
-  if (!env.UPLOAD_TOKEN || auth !== `Bearer ${env.UPLOAD_TOKEN}`) {
-    return Response.json({ erro: "não autorizado" }, { status: 401 });
-  }
+  return Boolean(env.UPLOAD_TOKEN) && iguais(auth, `Bearer ${env.UPLOAD_TOKEN}`);
+}
 
-  let corpo;
+// ---------- API ----------
+
+async function publicar(req, env, url) {
+  let c;
   try {
-    corpo = await req.json();
+    c = await req.json();
   } catch {
     return Response.json({ erro: "JSON inválido" }, { status: 400 });
   }
-  const titulo = (corpo.titulo || "Reunião").toString().slice(0, 200);
-  const segments = Array.isArray(corpo.segments) ? corpo.segments : [];
+  const chave = String(c.chave || "").slice(0, 120);
+  const titulo = String(c.titulo || "Reunião").slice(0, 200);
+  const html = String(c.html || "");
+  if (!chave || !html) return Response.json({ erro: "faltam chave e html" }, { status: 400 });
+  // v2: toda página nova tem senha. Página aberta só existe como legado da v1.
+  if (!c.senha || String(c.senha).trim().length < 8)
+    return Response.json({ erro: "senha obrigatória (8+ caracteres)" }, { status: 400 });
+  if (html.length > MAX_HTML) return Response.json({ erro: "html grande demais" }, { status: 413 });
+  const expira = expiracao(c.expira_dias);
+  const { hash, sal } = c.senha ? await hashSenha(String(c.senha)) : { hash: null, sal: null };
 
-  // Monta o texto "Falante: fala" para o modelo.
-  const transcricao = segments
-    .map((s) => `${s.speaker}: ${s.text}`)
-    .join("\n")
-    // Corta transcrições gigantes p/ caber no contexto. O corte vale SÓ para o
-    // resumo: os segments inteiros continuam indo para o D1 e para a página.
-    // Numa reunião muito longa, portanto, o resumo ignora o final.
-    .slice(0, 40000);
+  // idempotente por chave: republicar a mesma reunião atualiza a mesma página
+  const existente = await env.DB.prepare("SELECT id FROM reunioes WHERE chave = ?").bind(chave).first();
+  const id = existente ? existente.id : crypto.randomUUID().replace(/-/g, "");
+  if (existente) {
+    await env.DB.prepare(
+      "UPDATE reunioes SET titulo=?, html=?, senha_hash=?, senha_sal=?, expira_em=? WHERE id=?"
+    ).bind(titulo, html, hash, sal, expira, id).run();
+  } else {
+    await env.DB.prepare(
+      "INSERT INTO reunioes (id, titulo, data, segments, resumo, chave, html, senha_hash, senha_sal, expira_em) " +
+        "VALUES (?, ?, ?, '[]', NULL, ?, ?, ?, ?, ?)"
+    ).bind(id, titulo, new Date().toISOString(), chave, html, hash, sal, expira).run();
+  }
+  return Response.json({ id, url: `${url.origin}/r/${id}`, expira_em: expira, atualizada: !!existente });
+}
 
-  let resumo = null;
+async function listar(env) {
+  const r = await env.DB.prepare(
+    "SELECT id, titulo, data, chave, expira_em, senha_hash IS NOT NULL AS tem_senha, " +
+      "html IS NULL AS legado FROM reunioes ORDER BY data DESC"
+  ).all();
+  return Response.json({ atas: r.results || [] });
+}
+
+async function alterar(req, env, id) {
+  let c;
   try {
-    resumo = await resumir(env, transcricao);
-  } catch (e) {
-    // Se a IA falhar, ainda guardamos a transcrição — a página mostra sem resumo.
-    // Perder o resumo é aceitável; perder a reunião não é. O motivo do erro não
-    // é registrado aqui: para investigar, `npx wrangler tail` durante o upload.
-    resumo = null;
+    c = await req.json();
+  } catch {
+    return Response.json({ erro: "JSON inválido" }, { status: 400 });
   }
-
-  // O id é a fechadura: 32 hexadecimais aleatórios, não adivinháveis. Não há
-  // login nem senha — quem tem o link lê a ata (a página vai com `noindex`).
-  const id = crypto.randomUUID().replace(/-/g, "");
-  const data = new Date().toISOString();
-  await env.DB.prepare(
-    "INSERT INTO reunioes (id, titulo, data, segments, resumo) VALUES (?, ?, ?, ?, ?)"
-  )
-    .bind(id, titulo, data, JSON.stringify(segments), resumo ? JSON.stringify(resumo) : null)
-    .run();
-
-  // origin vem do pedido, não de constante: o link devolvido é sempre do mesmo
-  // host por onde o upload entrou (workers.dev hoje, domínio próprio amanhã).
-  return Response.json({ url: `${url.origin}/r/${id}` });
+  const row = await env.DB.prepare("SELECT id FROM reunioes WHERE id = ?").bind(id).first();
+  if (!row) return Response.json({ erro: "não encontrada" }, { status: 404 });
+  if ("senha" in c) {
+    const { hash, sal } = c.senha ? await hashSenha(String(c.senha)) : { hash: null, sal: null };
+    await env.DB.prepare("UPDATE reunioes SET senha_hash=?, senha_sal=? WHERE id=?").bind(hash, sal, id).run();
+  }
+  if ("expira_dias" in c) {
+    await env.DB.prepare("UPDATE reunioes SET expira_em=? WHERE id=?").bind(expiracao(c.expira_dias), id).run();
+  }
+  return Response.json({ ok: true });
 }
 
-async function resumir(env, transcricao) {
-  const system =
-    "Você é um analista que produz ATAS EXECUTIVAS de reuniões de negócios em português do Brasil. " +
-    "Seja fiel ao conteúdo e NÃO invente fatos, mas seja específico e concreto: capture nomes, números, " +
-    "valores, prazos, produtos e argumentos realmente ditos. Evite generalidades vagas. Responda SOMENTE com JSON válido.";
-  const user =
-    'Analise a reunião abaixo. "Você" é o consultor (RYZE); os demais são o(s) cliente(s), ' +
-    'que podem aparecer como "Participante" ou, quando há vários, "Participante 1", "Participante 2" etc. ' +
-    "Quando alguém disser o próprio nome ou for chamado pelo nome, use o nome real na atribuição.\n\n" +
-    "Preencha os campos:\n" +
-    "- contexto: 1-2 frases sobre o objetivo/assunto da reunião e quem participou (se identificável).\n" +
-    "- resumo_executivo: 5 a 8 frases, densas e informativas — o que foi discutido, os encaminhamentos e o porquê.\n" +
-    "- temas: os principais assuntos tratados (3 a 8 itens curtos).\n" +
-    "- decisoes: tudo que ficou decidido (seja concreto).\n" +
-    '- proximos_passos: itens com "acao", "responsavel" [Você/Participante/indefinido] e "prazo" [ou "não definido"].\n' +
-    "- pendencias: pontos em aberto, dúvidas ou riscos a resolver (lista vazia se não houver).\n\n" +
-    "TRANSCRIÇÃO:\n" +
-    transcricao;
-
-  const r = await env.AI.run(MODELO, {
-    messages: [
-      { role: "system", content: system },
-      { role: "user", content: user },
-    ],
-    response_format: { type: "json_schema", json_schema: ESQUEMA },
-    max_tokens: 2048,
-  });
-
-  let data = r.response;
-  if (typeof data === "string") {
-    try {
-      data = JSON.parse(data);
-    } catch {
-      // fallback: extrai o objeto JSON de dentro de um texto
-      const i = data.indexOf("{");
-      const j = data.lastIndexOf("}");
-      data = JSON.parse(data.slice(i, j + 1));
-    }
-  }
-  return data;
+async function apagar(env, id) {
+  const r = await env.DB.prepare("DELETE FROM reunioes WHERE id = ?").bind(id).run();
+  return Response.json({ apagada: (r.meta && r.meta.changes) > 0 });
 }
 
-async function verAta(id, env) {
+function expiracao(dias) {
+  const n = Number(dias || 0);
+  if (!n || n <= 0) return null;
+  return new Date(Date.now() + n * 86400000).toISOString();
+}
+
+// ---------- senha ----------
+// A senha é aleatória (8 caracteres de um alfabeto de 31 ≈ 40 bits), gerada na
+// máquina do Pedro; o risco é adivinhação online, não quebra de hash. SHA-256 com
+// sal basta e cabe no limite de CPU do plano gratuito (PBKDF2 não caberia).
+
+async function sha256hex(txt) {
+  const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(txt));
+  return [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, "0")).join("");
+}
+
+async function hashSenha(senha, sal) {
+  sal = sal || crypto.randomUUID().replace(/-/g, "");
+  return { hash: await sha256hex(`${sal}:${senha.trim().toLowerCase()}`), sal };
+}
+
+const COOKIE_DIAS = 30;
+
+async function assinatura(env, id, hash, emitido) {
+  const k = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(env.UPLOAD_TOKEN || ""), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+  );
+  const s = await crypto.subtle.sign("HMAC", k, new TextEncoder().encode(`${id}:${hash}:${emitido}`));
+  return [...new Uint8Array(s)].map((x) => x.toString(16).padStart(2, "0")).join("");
+}
+
+// cookie = "<emitido_em_segundos>.<hmac(id:hash:emitido)>": a validade é conferida AQUI,
+// não só pelo Max-Age do navegador; trocar a senha invalida todos os cookies da ata.
+async function cookieValido(req, env, id, hash) {
+  const v = cookie(req, `ata_${id}`) || "";
+  const i = v.indexOf(".");
+  if (i < 1) return false;
+  const emitido = v.slice(0, i);
+  const idade = Date.now() / 1000 - Number(emitido);
+  if (!(idade >= 0 && idade <= COOKIE_DIAS * 86400)) return false;
+  return iguais(v.slice(i + 1), await assinatura(env, id, hash, emitido));
+}
+
+function cookie(req, nome) {
+  const c = req.headers.get("Cookie") || "";
+  for (const parte of c.split(/;\s*/)) {
+    const i = parte.indexOf("=");
+    if (i > 0 && parte.slice(0, i) === nome) return parte.slice(i + 1);
+  }
+  return null;
+}
+
+function iguais(a, b) {
+  if (!a || !b || a.length !== b.length) return false;
+  let d = 0;
+  for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return d === 0;
+}
+
+// ---------- páginas ----------
+
+async function buscar(env, id) {
+  if (!/^[0-9a-f]{32}$/.test(id)) return null;
   const row = await env.DB.prepare(
-    "SELECT titulo, data, segments, resumo FROM reunioes WHERE id = ?"
-  )
-    .bind(id)
-    .first();
-  if (!row) return html(landing("Ata não encontrada."), 404);
+    "SELECT id, titulo, data, segments, resumo, html, senha_hash, senha_sal, expira_em FROM reunioes WHERE id = ?"
+  ).bind(id).first();
+  if (!row) return null;
+  if (row.expira_em && row.expira_em < new Date().toISOString()) {
+    await env.DB.prepare("DELETE FROM reunioes WHERE id = ?").bind(id).run();
+    return null;
+  }
+  return row;
+}
 
+async function verAta(req, env, id) {
+  const row = await buscar(env, id);
+  if (!row) return html(landing("Ata não encontrada ou expirada."), 404);
+  if (row.senha_hash) {
+    if (!(await cookieValido(req, env, id, row.senha_hash))) return html(formSenha(row.titulo), 401);
+  }
+  if (row.html) return pagina200(row.html);
   const segments = JSON.parse(row.segments || "[]");
   const resumo = row.resumo ? JSON.parse(row.resumo) : null;
-  return html(pagina(row.titulo, row.data, segments, resumo), 200);
+  return pagina200(pagina(row.titulo, row.data, segments, resumo));
 }
 
-// ---------- helpers de renderização ----------
+async function entrar(req, env, id) {
+  const row = await buscar(env, id);
+  if (!row) return html(landing("Ata não encontrada ou expirada."), 404);
+  if (!row.senha_hash) return Response.redirect(new URL(`/r/${id}`, req.url).toString(), 303);
+  const form = await req.formData().catch(() => null);
+  const senha = form ? String(form.get("senha") || "") : "";
+  const { hash } = await hashSenha(senha, row.senha_sal);
+  if (!iguais(hash, row.senha_hash)) {
+    await new Promise((r) => setTimeout(r, 400)); // freio barato contra tentativa em massa
+    return html(formSenha(row.titulo, "Senha incorreta."), 401);
+  }
+  const emitido = String(Math.floor(Date.now() / 1000));
+  const sig = await assinatura(env, id, row.senha_hash, emitido);
+  return new Response(null, {
+    status: 303,
+    headers: {
+      Location: `/r/${id}`,
+      "Set-Cookie": `ata_${id}=${emitido}.${sig}; Path=/r/${id}; Max-Age=${COOKIE_DIAS * 86400}; HttpOnly; Secure; SameSite=Lax`,
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
+function pagina200(body) {
+  return new Response(body, { status: 200, headers: CABECALHOS_PAGINA });
+}
+
+function html(body, status) {
+  return new Response(body, { status: status || 200, headers: CABECALHOS_PAGINA });
+}
+
+function formSenha(titulo, erro) {
+  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">
+<title>${esc(MARCA)} — Ata</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>${CSS}
+.senha{max-width:420px;margin:0 auto}
+.senha form{display:flex;flex-direction:column;gap:12px;margin-top:18px}
+.senha input{font:inherit;font-size:18px;padding:12px 14px;border:1px solid var(--g200);border-radius:10px;letter-spacing:2px}
+.senha button{font:inherit;font-weight:600;padding:12px;border:0;border-radius:10px;background:var(--black);color:var(--gold);cursor:pointer}
+.senha .erro{color:#B4552D;font-size:14px;margin:0}
+</style></head><body><div class="wrap senha">
+<header class="capa"><div class="capa-top"><span class="lg">${logo("#FFB700", "30px")}</span><span class="wordmark">${esc(MARCA)}</span></div>
+<div class="eyebrow">Ata de reunião</div><h1>${esc(titulo)}</h1></header>
+<section class="card"><p class="lead">Esta ata é protegida. Digite a senha que você recebeu junto com o link.</p>
+${erro ? `<p class="erro">${esc(erro)}</p>` : ""}
+<form method="post"><input name="senha" autocomplete="off" autofocus aria-label="Senha" placeholder="xxxx-xxxx"><button type="submit">Abrir a ata</button></form></section>
+</div></body></html>`;
+}
+
+// ---------- legado: atas publicadas antes da v2 (html vazio) ----------
+// Renderiza a partir de segments + resumo, como a v1 fazia. Nada novo passa por aqui.
 
 function esc(s) {
   return String(s == null ? "" : s)
@@ -208,12 +321,6 @@ function dataBR(iso) {
   }
 }
 
-function html(body, status) {
-  return new Response(body, {
-    status: status || 200,
-    headers: { "Content-Type": "text/html; charset=utf-8" },
-  });
-}
 
 function pagina(titulo, data, segments, resumo) {
   const linhas = segments

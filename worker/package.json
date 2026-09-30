@@ -1,0 +1,12 @@
+{
+  "name": "atas-worker",
+  "private": true,
+  "type": "module",
+  "description": "Só para os testes. O deploy continua sendo `npx wrangler deploy`, sem build.",
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "devDependencies": {
+    "miniflare": "^4.20250901.0"
+  }
+}
