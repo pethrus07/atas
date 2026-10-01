@@ -120,7 +120,8 @@ def fonte_audio(sessao, nome):
     """O áudio disponível de um canal: o PCM se ainda existir, senão o Opus."""
     pcm = sessao.mic_pcm if nome == "mic" else sessao.loop_pcm
     if pcm.exists():
-        return pcm
+        # PCM de 0 bytes (canal que morreu ao abrir) não é áudio: tratar como ausente
+        return pcm if pcm.stat().st_size >= SR else None
     op = sessao.audio_dir / f"{nome}.opus"
     return op if op.exists() else None
 

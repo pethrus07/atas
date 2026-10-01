@@ -90,7 +90,7 @@ atas/
 │   ├── wrangler.toml          conta FIXADA, D1, cron, ambiente homolog
 │   ├── package.json + test/   só para os testes (Miniflare); o deploy não tem build
 ├── claude/skills/ata/         a skill /ata (junction em ~/.claude/skills/ata)
-├── tests/                     pytest: 51 testes, inclusive fumaça real (-m lento)
+├── tests/                     pytest: 53 testes, inclusive fumaça e gravação reais (-m lento)
 ├── atas-salvas/               FORA DO GIT — uma pasta por reunião (§8)
 ├── fala-analise/              FORA DO GIT — histórico e painel do Raio-X
 └── docs/                      este arquivo + BRIEFING-V2.md
@@ -100,29 +100,29 @@ atas/
 
 ## 3 · O ciclo de vida de uma reunião
 
-1. **Atalho → `gravar.bat` → `app.py`.** O console fica aberto atrás, minimizado: se o
-   Python morrer antes da janela subir, o traceback fica lá e o `pause` segura.
-2. **Ao abrir**, `sessao.orfas()` procura sessão em `gravando`/`gravado`/`processando` cuja
-   `.batida` parou há mais de 45 s. Se houver, a janela oferece "Gerar a ata com o que foi
-   gravado".
-3. **Nova reunião (R6).** Título, **tipo (obrigatório, sem valor padrão: herdar o da reunião
-   anterior fazia Parresia virar cliente)**, projeto (lista das reuniões anteriores; escolher um
-   preenche os participantes da última) e quem vai falar do outro lado. "Mais opções",
-   recolhido e com resumo de uma linha: Claude ligado/desligado, ao vivo.
-4. **Checagem.** `record.escolher_dispositivos()` pega o primeiro microfone e o primeiro
-   loopback que **abrem de verdade**; `medir_niveis()` grava 3 s de cada. Microfone mudo é
-   alerta; chamada em silêncio é aviso ("normal se ainda não começou").
-5. **Gravando.** `Sessao.criar()` faz a pasta; `Gravador.iniciar()` liga o "não dormir" do
-   Windows, a batida e uma thread por canal. A janela mostra tempo, nível de cada lado e
-   alertas (mic mudo > 1 min, chamada muda > 3 min, canal que parou). O título da janela vira
-   "● 00:12:34 — Atas", visível na barra de tarefas.
-6. **Parar.** Fechar a janela pergunta antes. `parar()` fecha os canais, faz fsync e marca
-   `gravado`.
-7. **`pipeline.processar()`** (§4) roda numa thread, com a batida ligada; a tela mostra a
-   última mensagem.
-8. **Pronto.** Todas as etapas com ✓/✗/–/○ e o motivo; botões "Ver a ata", "Abrir a pasta"
-   (Explorer com o arquivo selecionado) e, em cliente, **"Publicar para o cliente"** e depois
-   "Copiar link e senha".
+A janela tem **três telas** — Nova reunião → Gravando → Pronto. Eram cinco (com uma de
+checagem no meio) e o Pedro achou "um pouquinho too much" na primeira reunião real (30/09).
+
+1. **Atalho → `gravar.bat` → `app.py`.** O console fica minimizado atrás: se o Python morrer
+   antes da janela subir, o traceback fica lá e o `pause` segura. O `app.py` importa o
+   `record` na thread principal, e o `record` liga a **thread guardiã do COM** (§14).
+2. **Ao abrir**, `sessao.a_retomar()` procura sessão órfã (batida parada há mais de 45 s) ou
+   que falhou numa etapa essencial e oferece "Terminar agora" / "Agora não".
+3. **Nova reunião (R6).** Título, **tipo (obrigatório, sem valor padrão — herdar o da reunião
+   anterior fazia Parresia virar cliente)** e quem fala do outro lado. Projeto, Claude e ao
+   vivo ficam em "Mais opções", recolhido, com resumo de uma linha.
+4. **Gravar já grava.** Numa thread, `record.escolher_dispositivos()` escolhe o microfone —
+   **fone (USB/Bluetooth) antes do interno**, cada um tentado pelo `soundcard` e, se não abrir,
+   pela via PortAudio — e o loopback da saída padrão. Em seguida `Sessao.criar()` faz a pasta
+   e `Gravador.iniciar()` liga o "não dormir", a batida e uma thread por canal.
+5. **Gravando.** Tempo, nível de cada lado, o microfone em uso ("Microfone: AB13X USB
+   Audio") e alertas só quando existem: microfone mudo > 1 min, chamada muda > 3 min, canal
+   que caiu ou trocou. Se os dois canais pararem, o topo vira **"✕ NÃO ESTÁ GRAVANDO"**.
+6. **Parar.** Fechar a janela pergunta antes. `parar()` fecha os canais e marca `gravado`.
+7. **`pipeline.processar()`** (§4) numa thread, com batida e trava.
+8. **Pronto.** O resultado da ata numa linha, só as etapas que **falharam** (o resto em
+   "Detalhes"), "Ver a ata", "Abrir a pasta" (Explorer com o arquivo selecionado) e, em
+   cliente, "Publicar para o cliente" e depois "Copiar link e senha".
 9. **No Claude, `/ata`** (§12).
 
 ---
@@ -157,7 +157,7 @@ essencial (transcrição, ata, página, PDF).
 | Caminho | `C:\Users\olive\.venvs\faster-whisper` | `C:\Users\olive\.venvs\diar` |
 | Python | 3.14.6 | 3.12.13 |
 | Quem usa | tudo, menos `diarize.py` | só `diarize.py` |
-| Bibliotecas | `faster-whisper` 1.2.1 (ctranslate2 4.8.1), `soundcard` 0.4.6, `numpy` 2.5.1, `av` 18, `pytest`, `pillow`, **`nvidia-cublas-cu12` 12.9 + `nvidia-cudnn-cu12` 9.27** | `sherpa-onnx` 1.13.4, `numpy` |
+| Bibliotecas | `faster-whisper` 1.2.1 (ctranslate2 4.8.1), `soundcard` 0.4.6, `sounddevice` 0.5.6 (PortAudio), `numpy` 2.5.1, `av` 18, `pytest`, `pillow`, **`nvidia-cublas-cu12` 12.9 + `nvidia-cudnn-cu12` 9.27** | `sherpa-onnx` 1.13.4, `numpy` |
 
 São dois porque o sherpa-onnx não tem roda para o 3.14. O contrato entre eles é minúsculo:
 um arquivo de áudio (`.pcm` ou `.wav`) de entrada, uma linha JSON no stdout
@@ -408,7 +408,7 @@ disputaria processador com a chamada). Não substitui a transcrição final.
 | /ata, índice (`buscar`), log de decisões | **prontos** | `claude/skills/ata`, `atas.py` |
 | Raio-X sem título no Sinapse | **pronto**; nota regravada | `analise_fala.py` |
 | 27 atas antigas | **importadas** como sessões `legado`, tipo/projeto **inferidos**; sem áudio; ainda não estruturadas | `legado.py` |
-| Testes | 51 em Python + 10 no Worker | `tests/`, `worker/test/` |
+| Testes | 53 em Python (2 com os dispositivos reais) + 10 no Worker | `tests/`, `worker/test/` |
 | Ao vivo | MVP pronto, **não testado numa reunião real** | `ao_vivo.py` |
 | Domínio próprio | adiado | README da v1 / memória |
 
@@ -425,9 +425,17 @@ disputaria processador com a chamada). Não substitui a transcrição final.
 - **O turbo com vocabulário junta trechos** (§5). Não tire o `word_timestamps`.
 - **Limiar de diarização sem teto fatia uma pessoa em dezenas** (§6). O teto e o número
   informado existem por isso.
-- **Microfone USB sem formato EXTENSIBLE derruba o `soundcard`** num `assert` seco
-  (`Microphone (AB13X USB Audio)`, 03/09/2026). `record._abre()` testa abrindo de verdade e usa
-  o primeiro que abre, avisando.
+- **Microfone USB sem formato EXTENSIBLE derruba o `soundcard`** num `assert` seco. É o
+  **fone do Pedro**, `Microphone (AB13X USB Audio)` (03/09 e 30/09/2026). Até a v2 o sistema
+  caía para o microfone do notebook; agora `record.MicPortAudio` abre o mesmo dispositivo pelo
+  PortAudio (WASAPI com `auto_convert`), e o fone ganha do interno na escolha.
+- **COM do Windows morre com a thread que o iniciou** (0x800401F0, CO_E_NOTINITIALIZED). O
+  `soundcard` inicializa o COM só na thread que o importa; na janela era a thread da checagem,
+  que terminava — e a **primeira reunião real da v2 (30/09, 4 min) gravou 0 bytes**, até ler
+  `.name` de um dispositivo falhava. Conserto: thread guardiã que segura o MTA do processo
+  (`record._guardiao_com`) + `com_na_thread()` em toda thread que abre dispositivo. O teste
+  `tests/test_dispositivos_reais.py` (lento) grava de verdade nessa mesma sequência de threads —
+  os testes com dispositivo falso não tinham como pegar isso.
 - **Sem User-Agent de navegador o Cloudflare barra o `urllib`** com 403 "error code: 1010"
   (Bot Fight Mode). `upload.py` manda UA de Chrome.
 - **O Edge headless não imprime se já estiver aberto.** Chrome primeiro, perfil descartável.
@@ -464,4 +472,4 @@ disputaria processador com a chamada). Não substitui a transcrição final.
 | toda ata subia, com marca RYZE | só cliente sobe; interno fica local e neutro |
 | link público eterno | senha por ata, expiração de 90 dias, rota de exclusão |
 | Sinapse listava reuniões pelo título | data + tipo |
-| sem testes, deploy direto em produção | 61 testes, homologação configurada |
+| sem testes, deploy direto em produção | 63 testes, homologação configurada |
