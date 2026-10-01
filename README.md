@@ -24,13 +24,13 @@ sai como PDF com a marca RYZE e, **quando você manda**, como página com senha 
 ```
 
 ## No dia a dia
-1. Dois cliques no atalho **Atas** (ou em [local/gravar.bat](local/gravar.bat)).
-2. Título, **tipo** (cliente · Parresia · carreira · pessoal), projeto e **quem vai falar
-   do outro lado**. Os nomes ajudam a separar as vozes e a atribuir as tarefas.
-3. **Testar o áudio** → **Gravar**. A janela mostra o tempo e o nível de cada lado, e
-   avisa se o microfone ou a chamada ficarem mudos.
-4. **Parar e gerar a ata.** No fim aparecem todas as etapas (✓ ok · ✗ falhou · – pulada ·
-   ○ pendente). Em reunião de cliente, **Publicar para o cliente** sobe a página com senha.
+1. Dois cliques no atalho **Atas** (Área de Trabalho).
+2. Título, **tipo** (cliente · Parresia · carreira · pessoal) e **quem fala do outro lado**
+   — os nomes ajudam a separar as vozes e a atribuir as tarefas.
+3. **Gravar.** A tela mostra o tempo, o nível de cada lado e o microfone em uso (o do fone,
+   se ele estiver plugado). Só aparece aviso se houver problema.
+4. **Parar e gerar a ata.** Em reunião de cliente, **Publicar para o cliente** sobe a página
+   com senha — só se você mandar.
 5. No Claude: **`/ata`** — confirma quem é quem, fecha lacunas e recebe as propostas de
    memória, Sinapse, log de decisões e ClickUp (nada é publicado sem o seu sim).
 
@@ -58,13 +58,13 @@ Todos os comandos: `atas.py --help` e [docs/ARQUITETURA.md §11](docs/ARQUITETUR
 
 ## Testes
 ```powershell
-C:\Users\olive\.venvs\faster-whisper\Scripts\python.exe -m pytest tests -q   # 51 testes, ~16 s
+C:\Users\olive\.venvs\faster-whisper\Scripts\python.exe -m pytest tests -q   # 53 testes, ~25 s
 cd worker; npm test                                                          # 10 testes do Worker (Miniflare)
 ```
 
 ## Montar do zero
 - **Venv principal** `C:\Users\olive\.venvs\faster-whisper` (Python 3.14): `faster-whisper`,
-  `soundcard`, `numpy`, `av`, `pytest`, `pillow` e, para a GPU, `nvidia-cublas-cu12` +
+  `soundcard`, `sounddevice`, `numpy`, `av`, `pytest`, `pillow` e, para a GPU, `nvidia-cublas-cu12` +
   `nvidia-cudnn-cu12==9.*` (o `transcribe.py` acha as DLLs sozinho).
 - **Venv da diarização** `C:\Users\olive\.venvs\diar` (Python 3.12): `sherpa-onnx`, `numpy`.
   Modelos ONNX (~35 MB) em `local/models/diar/` (fora do git).

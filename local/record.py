@@ -57,34 +57,151 @@ def _rms(x):
     return float(np.sqrt(np.mean(np.square(x)))) if x.size else 0.0
 
 
+# ── COM por thread ────────────────────────────────────────────────────────────
+def _guardiao_com(pronto):
+    """Segura o MTA do processo vivo enquanto o programa existir.
+
+    O MTA de um processo some quando a última thread que chamou CoInitializeEx(MTA)
+    termina. O `soundcard` só o inicializa na thread que o importa; se ela acaba (a
+    checagem de áudio da janela), até ler `.name` de um dispositivo passa a dar
+    0x800401F0. Com esta thread viva, toda thread sem COM próprio cai no MTA implícito."""
+    try:
+        ctypes.windll.ole32.CoInitializeEx(None, 0x0)
+    except Exception:
+        pass
+    pronto.set()
+    threading.Event().wait()          # dorme para sempre (daemon: morre com o processo)
+
+
+_com_pronto = threading.Event()
+threading.Thread(target=_guardiao_com, args=(_com_pronto,), daemon=True,
+                 name="guardiao-com").start()
+_com_pronto.wait(2)
+
+
+class com_na_thread:
+    """Inicializa o COM (MTA) na thread atual e desfaz ao sair.
+
+    Existe por causa do erro 0x800401F0 (CO_E_NOTINITIALIZED) que derrubou os dois
+    canais na primeira reunião real da v2 (30/09/2026, 4 min, 0 bytes gravados): o
+    `soundcard` inicializa o COM UMA vez, na thread que o importa. Na janela, essa
+    era a thread da checagem de áudio, que termina — e com ela o MTA do processo.
+    Toda thread que abre dispositivo passa por aqui."""
+
+    def __enter__(self):
+        self._dono = False
+        try:
+            hr = ctypes.windll.ole32.CoInitializeEx(None, 0x0)   # COINIT_MULTITHREADED
+            self._dono = hr in (0, 1)                            # S_OK / S_FALSE
+        except Exception:
+            pass
+        return self
+
+    def __exit__(self, *exc):
+        if self._dono:
+            try:
+                ctypes.windll.ole32.CoUninitialize()
+            except Exception:
+                pass
+        return False
+
+
+# ── segunda via: PortAudio (sounddevice) ─────────────────────────────────────
+class _GravadorPA:
+    def __init__(self, idx, canais):
+        import sounddevice as sd
+        extra = None
+        try:
+            extra = sd.WasapiSettings(auto_convert=True)       # o Windows reamostra p/ 16 kHz
+        except Exception:
+            pass
+        self._st = sd.InputStream(device=idx, samplerate=SR, channels=canais, dtype="float32",
+                                  blocksize=BLOCK, extra_settings=extra)
+
+    def __enter__(self):
+        self._st.start()
+        return self
+
+    def __exit__(self, *exc):
+        try:
+            self._st.stop()
+        finally:
+            self._st.close()
+        return False
+
+    def record(self, numframes):
+        dado, _estouro = self._st.read(numframes)
+        return dado
+
+
+class MicPortAudio:
+    """Mesmo contrato do microfone do `soundcard` (`name`, `recorder()`), via PortAudio.
+
+    É a via do microfone que o `soundcard` não abre — o `Microphone (AB13X USB Audio)`,
+    o fone USB do Pedro, que não reporta o formato EXTENSIBLE (03/09 e 30/09/2026). O
+    PortAudio fala WASAPI sem essa exigência."""
+
+    via = "portaudio"
+
+    def __init__(self, nome, idx, canais):
+        self.name = nome
+        self.idx = idx
+        self.canais = canais
+
+    def recorder(self, samplerate=SR):
+        return _GravadorPA(self.idx, self.canais)
+
+    @classmethod
+    def achar(cls, nome):
+        try:
+            import sounddevice as sd
+        except Exception:
+            return None
+        apis = sd.query_hostapis()
+        alvo = nome.lower()
+        for i, d in enumerate(sd.query_devices()):
+            if d["max_input_channels"] < 1 or "WASAPI" not in apis[d["hostapi"]]["name"]:
+                continue
+            if d["name"].lower() == alvo or alvo in d["name"].lower() or d["name"].lower() in alvo:
+                return cls(nome, i, min(2, int(d["max_input_channels"])))
+        return None
+
+
 # ── escolha de dispositivo ────────────────────────────────────────────────────
 def _abre(dispositivo):
     """Tenta abrir o dispositivo de verdade e ler um bloco.
 
-    Existe porque o `soundcard` só falha na HORA DE ABRIR, não ao listar: ele
-    exige que o mix format do device seja EXTENSIBLE e faz isso com um
-    `assert` seco —
-
-        assert ppMixFormat[0][0].Format.wFormatTag == 0xFFFE
-
-    Foi o que aconteceu em 03/09/2026 com o `Microphone (AB13X USB Audio)`, que
-    tinha virado o microfone padrão: o gravador simplesmente não abria.
-    """
+    O `soundcard` só falha na HORA DE ABRIR, não ao listar (assert seco de formato
+    EXTENSIBLE). Por isso nenhum dispositivo é escolhido sem abrir."""
     try:
-        with dispositivo.recorder(samplerate=SR) as r:
-            r.record(numframes=BLOCK)
+        with com_na_thread():
+            with dispositivo.recorder(samplerate=SR) as r:
+                r.record(numframes=BLOCK)
         return True
     except Exception:
         return False
 
 
-def _escolher_mic(preferido=None):
-    """Primeiro microfone que ABRE, não o primeiro que existe.
+_INTERNOS = ("realtek", "intel", "smart sound", "array", "integrad", "internal", "conexant")
 
-    Ordem: o que o config pedir, depois o padrão do Windows, depois os demais.
-    Devolve (microfone, aviso) — gravar com um microfone que não é o que a pessoa
-    acha que é dá uma ata com a voz sumida e nenhum sinal do porquê.
-    """
+
+def _e_interno(nome):
+    n = (nome or "").lower()
+    return any(k in n for k in _INTERNOS)
+
+
+def _escolher_mic(preferido=None):
+    """O microfone certo é o do FONE, não o do notebook.
+
+    Ordem: o que o config pedir; o padrão do Windows; dispositivos externos (USB,
+    Bluetooth — o fone) antes dos internos. Para cada um, tenta o `soundcard` e, se
+    não abrir, a via PortAudio. Devolve (microfone, aviso)."""
+    with com_na_thread():
+        todos = list(sc.all_microphones(include_loopback=False))
+        try:
+            padrao_win = sc.default_microphone()
+        except Exception:
+            padrao_win = None
     candidatos, vistos = [], set()
 
     def juntar(d):
@@ -93,46 +210,53 @@ def _escolher_mic(preferido=None):
             candidatos.append(d)
 
     if preferido:
-        for m in sc.all_microphones(include_loopback=False):
+        for m in todos:
             if preferido.lower() in m.name.lower():
                 juntar(m)
-    try:
-        juntar(sc.default_microphone())
-    except Exception:
-        pass
-    for m in sc.all_microphones(include_loopback=False):
+    # fone plugado (USB/Bluetooth) ganha do microfone do notebook, mesmo que o Windows
+    # ainda aponte para o interno: quem pluga o fone vai falar por ele
+    for m in todos:
+        if not _e_interno(m.name):
+            juntar(m)
+    juntar(padrao_win)
+    for m in todos:
         juntar(m)
-
     if not candidatos:
         raise RuntimeError("Nenhum microfone encontrado no Windows.")
 
-    padrao = candidatos[0].name
+    desejado = candidatos[0].name
     for m in candidatos:
-        if _abre(m):
+        escolhido = m if _abre(m) else None
+        if escolhido is None:
+            pa = MicPortAudio.achar(m.name)
+            if pa is not None and _abre(pa):
+                escolhido = pa
+        if escolhido is not None:
             aviso = None
-            if m.name != padrao:
-                aviso = (f"o microfone escolhido ({padrao}) não abre neste driver; "
-                         f"gravando por {m.name}")
-            return m, aviso
+            if escolhido.name != desejado:
+                aviso = f"{desejado} não abriu; gravando sua voz por {escolhido.name}"
+            return escolhido, aviso
     raise RuntimeError("Nenhum microfone do sistema pôde ser aberto.")
 
 
 def _escolher_loop():
     """Loopback da saída padrão; se não abrir, o primeiro loopback que abre.
     Devolve (loopback|None, aviso). None = grava só a sua voz (melhor que nada)."""
-    spk = sc.default_speaker()
-    try:
-        loop = sc.get_microphone(spk.name, include_loopback=True)
-    except Exception:
-        loop = None
+    with com_na_thread():
+        spk = sc.default_speaker()
+        try:
+            loop = sc.get_microphone(spk.name, include_loopback=True)
+        except Exception:
+            loop = None
+        todos = [m for m in sc.all_microphones(include_loopback=True) if m.isloopback]
     if loop is not None and _abre(loop):
         return loop, None
-    for m in sc.all_microphones(include_loopback=True):
-        if m.isloopback and (loop is None or m.name != loop.name) and _abre(m):
-            return m, (f"o loopback da saída padrão ({spk.name}) não abre; capturando de "
-                       f"{m.name} — confira se a chamada toca AÍ")
-    return None, (f"nenhum loopback abre — só a sua voz será gravada. "
-                  f"Confira a saída de áudio ({spk.name}).")
+    for m in todos:
+        if (loop is None or m.name != loop.name) and _abre(m):
+            return m, (f"o som da saída padrão ({spk.name}) não abre; capturando de "
+                       f"{m.name} — confira se a chamada toca aí")
+    return None, (f"não consigo ouvir a chamada — só a sua voz será gravada. "
+                  f"Confira a saída de som ({spk.name}).")
 
 
 def escolher_dispositivos(mic_preferido=None):
@@ -154,7 +278,7 @@ def medir_niveis(disp, segundos=3.0):
             out[nome] = {"rms": 0.0, "pico": 0.0, "ok": False, "erro": "sem dispositivo"}
             continue
         try:
-            with d.recorder(samplerate=SR) as r:
+            with com_na_thread(), d.recorder(samplerate=SR) as r:
                 x = _mono(r.record(numframes=n))
             out[nome] = {"rms": round(_rms(x), 5), "pico": round(float(np.max(np.abs(x))), 4),
                          "ok": _rms(x) >= LIMIAR_MUDO}
@@ -203,6 +327,10 @@ class Canal(threading.Thread):
             self.amostras += falta
 
     def run(self):
+        with com_na_thread():
+            self._run()
+
+    def _run(self):
         try:
             f = open(self.caminho, "ab", buffering=0)
         except Exception as e:
