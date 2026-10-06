@@ -33,6 +33,10 @@ Invoke-Expression "$A mostrar ultima"
    apresentado como suspeito, nunca como fato. Prazo não dito é lacuna, não data.
 6. **Credencial nunca aparece no chat.** A senha da página do cliente fica no `sessao.json`;
    diga onde está, não a imprima (a janela do Atas tem o botão de copiar).
+7. **Única escrita automática no Sinapse:** a nota `08-CRESCIMENTO/fala-raio-x.md`, que a
+   etapa `raio_x` regrava sem título de reunião. Todo o resto do vault é proposta.
+8. **Avaliação interna nunca vai ao cliente.** `avaliacao-interna*.md` fica na pasta da sessão;
+   o render não lê esse arquivo. Fala de conversa pessoal (política, renda) não sai da máquina.
 
 ## Passo a passo
 
@@ -59,13 +63,42 @@ Invoke-Expression "$A mostrar ultima"
   (ex.: `"prazo": "2026-10-10", "manual": ["prazo"]`) — senão a auditoria o remove por
   não estar na transcrição. Depois: `render <id>`.
 - Decisão sem `revisar_em`: **sugira** uma data (padrão +30 dias) e diga que é sugestão.
-  "Decisão sem revisão vira regra por esquecimento."
+  "Decisão sem revisão vira regra por esquecimento." (Desde a v2.1 isso não é mais lacuna
+  automática: era ruído que escondia a lacuna que importava.)
+- Prazo dito como "em 15 dias" / "4 ou 5 dias" / "duas semanas" agora é conferido pela
+  auditoria; se ainda assim virou lacuna, o Pedro confirma e você põe em `manual`.
 
 ### 4. O que mudou desde a última
 - `anterior <id>` devolve a reunião anterior do mesmo projeto (ou com as mesmas pessoas).
   `mostrar <anterior>`: para cada encaminhamento dela, diga se nesta reunião ele foi
   **citado como feito**, **citado como pendente** ou **não apareceu** — com o timestamp.
   Decisões que mudaram: mostre a de antes e a de agora lado a lado.
+
+### 4b. Reunião longa: leia a transcrição inteira
+- Acima de ~60 min, a ata automática sai em blocos, mas ainda pode deixar coisa de fora.
+  Leia a transcrição toda (junte as falas por pessoa e por tempo) e confira contra a ata:
+  **valores**, **escopo**, regras combinadas e **pedidos que o Pedro fez a você**.
+- O que faltar entra no `ata.json` com citação literal e timestamp (a auditoria confere), com
+  backup antes. Depois `render <id>`.
+
+### 4c. Avaliação interna (cliente e Parresia) — "ele evoluindo significa eu evoluindo"
+- A etapa `avaliacao` gera `avaliacao-interna.md` sozinha (Claude só com leitura de código e
+  memória). Leia, **confira** e complete; se não existir, escreva. Seções:
+  1. **Afirmações do Pedro conferidas**, as erradas primeiro: tabela Quando | O que disse |
+     O que é | Por que importa. Só chame de errado o que você conferiu (grep no código,
+     memória, número medido); o resto é "não conferido".
+  2. **Valores** contra o piso de hora dele (`negociacao.piso_hora` no config).
+  3. **Negociação**: ancoragem, concessões com/sem troca, escopo × preço, custo revelado.
+  4. **Postura**, com os números de `atas.py fala <id> --sem-abrir` (metas, cansaço, voz).
+  5. **O que corrigir com o cliente.**
+- Releia os números antes de entregar. Apresente a avaliação no chat (ele quer ler ali); o
+  arquivo fica como registro.
+- Modelo: `atas-salvas/2026-10-05_2303_alinhamento-valdir/avaliacao-interna.md`.
+
+### 4d. Raio-X da Fala
+- `atas.py fala <id>` recalcula e abre o painel: fatia de fala, confirmações/min,
+  muletas/1k, ritmo (pal/min nos turnos), maior monólogo, interrupções, cansaço por bloco de
+  30 min e voz (volume e entonação, do áudio do microfone). Metas em `metas_fala` no config.
 
 ### 5. Propostas (roteadas pelo TIPO da reunião)
 

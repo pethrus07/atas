@@ -51,7 +51,7 @@ BATIDA_S = 5          # intervalo da batida enquanto grava
 ORFA_APOS_S = 45      # batida mais velha que isso = gravador morto
 
 ETAPAS = ["captura", "transcricao", "falantes", "estrutura", "render", "pdf",
-          "publicacao", "raio_x", "audio"]
+          "publicacao", "raio_x", "audio", "avaliacao"]
 
 
 def agora_iso():
