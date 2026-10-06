@@ -45,7 +45,8 @@ CINZA = "#6E6E69"
 VERDE = "#3A5A50"
 ROTULO_ETAPA = {"transcricao": "Transcrição", "falantes": "Quem falou", "estrutura": "Ata (Claude)",
                 "render": "Página", "pdf": "PDF", "publicacao": "Publicação",
-                "raio_x": "Raio-X da fala", "audio": "Áudio guardado"}
+                "raio_x": "Raio-X da fala", "audio": "Áudio guardado",
+                "avaliacao": "Avaliação interna"}
 ESCALA = 1.0     # definida ao abrir a janela: 1.0 = tela a 100%
 
 
@@ -416,6 +417,50 @@ class App(tk.Tk):
                 self.q.put(lambda: self.pronto(s))
         threading.Thread(target=rodar, daemon=True).start()
 
+    def _cartao_fala(self, f, s):
+        """Raio-X da Fala na tela final (v2.1). A v2 calculava e não mostrava nada; o Pedro achou
+        que a função tinha sumido. Só o que não bateu a meta fica à vista; o resto, no painel."""
+        import json
+        import analise_fala
+        hist = analise_fala.FALA_DIR / "historico.jsonl"
+        reg = None
+        if hist.exists():
+            for ln in hist.read_text(encoding="utf-8").splitlines():
+                try:
+                    r = json.loads(ln)
+                except ValueError:
+                    continue
+                if r.get("id") == s.id:
+                    reg = r
+        if not reg or not reg.get("metrics", {}).get("metas"):
+            return
+        m = reg["metrics"]
+        caixa = ttk.Frame(f)
+        caixa.pack(fill="x", pady=(0, _p(14)))
+        ttk.Label(caixa, text="Sua fala nesta reunião", style="Sub.TLabel").pack(anchor="w")
+        fora = [x for x in m["metas"] if not x[3]]
+        for nome, val, meta, _ok in fora[:3]:
+            ttk.Label(caixa, text=f"!  {nome}: {val} (meta {meta})", style="Alerta.TLabel",
+                      wraplength=_p(370)).pack(anchor="w")
+        if not fora:
+            ttk.Label(caixa, text="✓  todas as metas batidas", style="Sub.TLabel").pack(anchor="w")
+        if m.get("voz"):
+            ttk.Label(caixa, text=f"·  entonação {m['voz']['entonacao_st']} semitons "
+                                  f"(perto de 1 soa monótono)", style="Sub.TLabel").pack(anchor="w")
+
+        def abrir(caminho):
+            import os
+            if caminho.exists():
+                os.startfile(str(caminho))
+        linha = ttk.Frame(caixa)
+        linha.pack(fill="x", pady=(_p(4), 0))
+        ttk.Button(linha, text="Ver o Raio-X completo", style="Link.TButton",
+                   command=lambda: abrir(analise_fala.FALA_DIR / "raio-x.html")).pack(side="left")
+        aval = s.caminho("avaliacao-interna.md")
+        if aval.exists():
+            ttk.Button(linha, text="Avaliação interna", style="Link.TButton",
+                       command=lambda: abrir(aval)).pack(side="right")
+
     def pronto(self, s):
         self.processando = False
         s = Sessao.abrir(s.pasta)
@@ -434,6 +479,7 @@ class App(tk.Tk):
         if est.get("status") == "ok":
             ttk.Label(f, text=est.get("detalhe", ""), style="Sub.TLabel",
                       wraplength=_p(370)).pack(anchor="w", pady=(0, _p(12)))
+        self._cartao_fala(f, s)
         corpo, _ = self._recolhivel(f, "Detalhes", "")
         for k in _sessao.ETAPAS[1:]:
             v = etapas.get(k)

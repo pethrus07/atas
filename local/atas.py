@@ -20,6 +20,7 @@ Atas — linha de comando. É a interface do /ata (Claude) e o plano B da janela
     python atas.py publicadas             o que está no Worker
     python atas.py abrir <id> [arquivo]   Explorer na pasta, com o arquivo selecionado
     python atas.py ao-vivo                caminho da transcrição ao vivo da gravação em curso
+    python atas.py fala <id|ultima>       Raio-X da Fala: ritmo, turnos, cansaço, voz e metas [--sem-abrir]
     python atas.py calibrar <id>          diarização com vários limiares no áudio guardado
     python atas.py importar-legado        traz as atas soltas de antes da v2
     python atas.py limpar-audio           aplica a retenção do áudio
@@ -28,6 +29,7 @@ Atas — linha de comando. É a interface do /ata (Claude) e o plano B da janela
 """
 import argparse
 import json
+import os
 import pathlib
 import subprocess
 import sys
@@ -196,7 +198,9 @@ def c_confirmar(a):
 
 def _reaplicar(s, a):
     import pipeline
-    at = pipeline.reaplicar(s, publicar_=not getattr(a, "sem_publicar", False))
+    # None = só atualiza a página se ela JÁ estiver no ar; publicar pela primeira vez é só `atas.py publicar`.
+    # Era `not sem_publicar` (= True = pedido explícito): render/falantes/confirmar publicavam sozinhos (06/10/2026).
+    at = pipeline.reaplicar(s, publicar_=False if getattr(a, "sem_publicar", False) else None)
     c = _ata.contagem(at)
     print(f"ok · {c['lacunas']} lacunas · {c['nao_verificados']} sem origem · {s.caminho('ata.html')}")
 
@@ -353,6 +357,43 @@ def c_abrir(a):
     print(alvo)
 
 
+def raio_x(s, cfg=None, log=print):
+    """(Re)calcula o Raio-X da Fala de uma sessão: palavras, ritmo, turnos, cansaço, voz e metas.
+    Usa o .pcm se ainda existir, senão o mic.opus guardado. Devolve o resultado de processar()."""
+    import analise_fala
+    import config as _config
+    cfg = cfg or _config.carregar()
+    segs, _ = _ata_de(s)
+    if not segs:
+        raise SystemExit("esta sessão não tem transcrição")
+    mic = s.mic_pcm if s.mic_pcm.exists() else s.caminho("audio") / "mic.opus"
+    r = analise_fala.processar(segs, s.m.get("titulo"), s.m.get("inicio") or "", tipo=s.tipo,
+                               sessao_id=s.id, audio_mic=mic, metas=cfg.get("metas_fala"))
+    s.etapa("raio_x", "ok", "nota do Sinapse atualizada" if r.get("vault") else "vault não encontrado")
+    return r
+
+
+def c_fala(a):
+    """O Raio-X da Fala de uma reunião: imprime as metas e abre o relatório e o painel."""
+    s = achar(a.id)
+    r = raio_x(s)
+    m = r["metrics"]
+    print(f"Raio-X da Fala · {s.m.get('titulo')} · {m['dur_min']} min")
+    for nome, val, meta, ok in m["metas"]:
+        print(f"  {'✓' if ok else '!'} {nome}: {val} (meta {meta})")
+    if m.get("voz"):
+        print(f"  · Entonação: {m['voz']['entonacao_st']} semitons · volume {m['voz']['volume_db']} dBFS")
+    if m.get("blocos"):
+        print("  · Ao longo da reunião (mul/1k): " + " → ".join(str(b["muletas_por_1000"]) for b in m["blocos"]))
+    print(f"\nrelatório: {r['md']}\npainel:    {r['dashboard']}")
+    if not a.sem_abrir:
+        for alvo in (r["dashboard"], r["md"]):
+            try:
+                os.startfile(str(alvo))          # painel no navegador; .md no preview
+            except (AttributeError, OSError):
+                pass
+
+
 def c_ao_vivo(a):
     grav = [s for s in _sessao.listar() if s.m.get("estado") == "gravando" and not s.orfa()]
     if not grav:
@@ -495,6 +536,10 @@ def main(argv=None):
     p.add_argument("arquivo", nargs="?")
     p.set_defaults(fn=c_abrir)
     sub.add_parser("ao-vivo").set_defaults(fn=c_ao_vivo)
+    p = sub.add_parser("fala", help="Raio-X da Fala da reunião (ritmo, turnos, cansaço, voz, metas)")
+    p.add_argument("id")
+    p.add_argument("--sem-abrir", action="store_true", help="só imprime, não abre o painel")
+    p.set_defaults(fn=c_fala)
     p = sub.add_parser("calibrar")
     p.add_argument("id")
     p.add_argument("--limiares", default="0.5,0.6,0.7,0.8,0.9,0.95")

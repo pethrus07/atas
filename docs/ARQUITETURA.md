@@ -473,3 +473,26 @@ disputaria processador com a chamada). Não substitui a transcrição final.
 | link público eterno | senha por ata, expiração de 90 dias, rota de exclusão |
 | Sinapse listava reuniões pelo título | data + tipo |
 | sem testes, deploy direto em produção | 63 testes, homologação configurada |
+
+---
+
+## 15 · v2.1 — análises (06/10/2026)
+
+Nasceu da primeira reunião longa real (3h09 com o Valter). O backlog completo, item a item, está
+em `docs/MELHORIAS.md`. Em uma linha cada:
+
+- **Publicação:** `render`, `falantes` e `confirmar` só **atualizam** uma página que já está no ar
+  (antes publicavam sozinhos). O entregável do cliente leva só os **trechos citados**; a
+  transcrição inteira fica na ata interna.
+- **Ata:** listas novas auditadas `valores` (V) e `escopo` (S) e o resumo `por_tema`; prazo
+  relativo ("15 dias", "duas semanas") conferido; revisão de decisão deixou de ser lacuna.
+  Acima de 60 min, a estrutura sai **em blocos de 40 min** com sobreposição de 2 min, os itens
+  são somados sem repetição (`estruturar.juntar`) e uma passada consolida a prosa.
+- **Raio-X da Fala:** além das palavras, ritmo nos turnos, maior monólogo, interrupções, tempo de
+  resposta, perguntas reais, **cansaço** por bloco de 30 min e **voz** (volume e variação de tom,
+  medidos no canal do microfone, do `.pcm` ou do `mic.opus` via ffmpeg) contra `metas_fala`.
+  Aparece na tela final e em `atas.py fala <id>`.
+- **Avaliação interna** (`avaliar.py`, etapa `avaliacao`): para cliente/Parresia ≥ 15 min, o
+  Claude roda com **Read, Grep, Glob** em `~/Projetos` + a memória do Claude Code e escreve
+  `avaliacao-interna.md`: afirmações do Pedro conferidas, valores contra o piso de hora,
+  negociação, postura e o que corrigir com o cliente. Nunca entra no entregável.

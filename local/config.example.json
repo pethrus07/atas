@@ -20,5 +20,17 @@
   "publicacao_reter_dias": 90,
 
   "ao_vivo": false,
-  "ao_vivo_janela_s": 30
+  "ao_vivo_janela_s": 30,
+
+  "_v21": "v2.1 (06/10/2026): reunião longa em blocos, avaliação interna e metas do Raio-X",
+  "estruturar_blocos_acima_min": 60,
+  "estruturar_bloco_min": 40,
+  "avaliar": true,
+  "avaliar_acima_min": 15,
+  "avaliar_timeout_s": 2400,
+  "projetos_dir": null,
+  "memoria_dir": null,
+  "negociacao": {"piso_hora": 70},
+  "metas_fala": {"share_fala": [0.35, 0.55], "conf_por_min": 0.5, "muletas_por_1000": 30,
+                 "ppm": [130, 180], "maior_monologo_s": 120}
 }

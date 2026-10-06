@@ -152,6 +152,19 @@ def html(ata, segs, cliente=False, impressao=False):
                       '<th>O quê</th><th>Quem</th><th>Até</th></tr></thead>'
                       f'<tbody>{"".join(rows)}</tbody></table></section>')
 
+    # valor "citado" (pesquisa de preço, custo interno, exemplo) não é acordo: fica só na ata
+    # interna, recolhido; ao cliente vai o combinado e o proposto
+    val = [v for v in itens("valores") if v.get("natureza") != "citado"]
+    citados = [v for v in itens("valores") if v.get("natureza") == "citado"] if not cliente else []
+    if val:
+        rows = "".join(
+            f'<tr><td>{e(v["descricao"])}<div class="meta">{origem(v)}</div></td>'
+            f'<td class="prazo">{e(v["valor"])}</td>'
+            f'<td>{e(v.get("condicao") or "")}</td></tr>' for v in val)
+        blocos.append('<section><h2>Valores</h2><table class="enc"><thead><tr>'
+                      '<th>O quê</th><th>Valor</th><th>Condição</th></tr></thead>'
+                      f'<tbody>{rows}</tbody></table></section>')
+
     # resumo e contexto são prosa livre (a auditoria não confere nomes dentro deles):
     # ao cliente só vão quando todo falante relevante está confirmado
     prosa_ok = not cliente or ata.get("status") == "revisada" or _ata.falantes_resolvidos(ata)
@@ -159,6 +172,18 @@ def html(ata, segs, cliente=False, impressao=False):
         ctx = f'<p class="ctx">{e(ata["contexto"])}</p>' if ata.get("contexto") else ""
         res = f'<p class="lead">{e(ata["resumo"])}</p>' if ata.get("resumo") else ""
         blocos.append(f'<section><h2>Resumo</h2>{ctx}{res}</section>')
+    if prosa_ok and ata.get("por_tema"):
+        blocos.append('<section><h2>Por assunto</h2>' + "".join(
+            f'<h3>{e(x["tema"])}</h3><p>{e(x["resumo"])}</p>' for x in ata["por_tema"]) + '</section>')
+
+    esc = itens("escopo")
+    if esc:
+        grupos = {}
+        for s in esc:
+            grupos.setdefault(s.get("tema") or "Geral", []).append(s)
+        corpo = "".join(f'<h3>{e(g)}</h3><ul class="simples">' + "".join(
+            f'<li>{e(s["item"])} {origem(s)}</li>' for s in its) + "</ul>" for g, its in grupos.items())
+        blocos.append(f'<section><h2>Escopo e entregas</h2>{corpo}</section>')
 
     mais = []
     if ata.get("temas"):
@@ -172,6 +197,9 @@ def html(ata, segs, cliente=False, impressao=False):
     if ris:
         mais.append('<h3>Riscos</h3><ul class="simples">' + "".join(
             f'<li>{e(r["risco"])} {origem(r)}</li>' for r in ris) + "</ul>")
+    if citados:
+        mais.append('<h3>Valores citados (referência, não acordo)</h3><ul class="simples">' + "".join(
+            f'<li>{e(v["descricao"])}: {e(v["valor"])} {origem(v)}</li>' for v in citados) + "</ul>")
     if not cliente and ata.get("lacunas"):
         mais.append('<h3>Lacunas a fechar</h3><ul class="simples">' + "".join(
             f'<li><b>{e(nome(l["ref"]))}</b> — {e(l["falta"])}</li>'
@@ -181,15 +209,26 @@ def html(ata, segs, cliente=False, impressao=False):
         blocos.append(f'<details class="mais"{aberto}><summary>Mais</summary>'
                       f'<div class="mais-corpo">{"".join(mais)}</div></details>')
 
+    # Transcrição: inteira só na ata interna. Ao cliente vão os TRECHOS que sustentam os itens
+    # verificados (v2.1): a ata de 05/10 virou um PDF de 179 páginas com 15 min de conversa
+    # pessoal, a um clique de "Publicar".
+    todas = _ata.falas(segs)
+    if cliente:
+        citados = {_ata.parse_t(it.get("t")) for k, _ in _ata.LISTAS for it in itens(k)}
+        mostrar = [f for f in todas if any(t is not None and abs(f["start"] - t) < 1 for t in citados)]
+        titulo_tr = "Trechos citados"
+    else:
+        mostrar, titulo_tr = todas, "Transcrição"
     falas = []
-    for f in _ata.falas(segs):
+    for f in mostrar:
         eu = f["speaker"] == "Você"
         falas.append(f'<div class="fala{" eu" if eu else ""}"><div class="quem">'
                      f'{e(nome(f["speaker"]))}<span class="ts">{_ata.fmt_t(f["start"])}</span>'
                      f'</div><div class="txt">{e(f["text"])}</div></div>')
-    blocos.append(f'<details class="transc"{aberto}><summary>Transcrição</summary>'
-                  f'<div class="falas">{"".join(falas) or "<p>Sem falas reconhecidas.</p>"}'
-                  f'</div></details>')
+    if falas or not cliente:
+        blocos.append(f'<details class="transc"{aberto}><summary>{titulo_tr}</summary>'
+                      f'<div class="falas">{"".join(falas) or "<p>Sem falas reconhecidas.</p>"}'
+                      f'</div></details>')
 
     pessoas = _lista_participantes(ata, nome)
     meta_topo = " · ".join(x for x in [
@@ -341,8 +380,22 @@ def markdown(ata, segs):
             L.append(f"| {x['id']} | {x['acao']} | {nome(x.get('dono')) or '—'} | "
                      f"{x.get('prazo') or '—'} | {x.get('t')}{ok} |")
         L.append("")
+    if ata.get("valores"):
+        L += ["## Valores", "", "| | O quê | Valor | Condição | Origem |", "|---|---|---|---|---|"]
+        for v in ata["valores"]:
+            ok = "" if v.get("verificado") is not False else " ⚠"
+            nat = " _(citado)_" if v.get("natureza") == "citado" else ""
+            L.append(f"| {v['id']} | {v['descricao']}{nat} | {v['valor']} | {v.get('condicao') or '—'} | "
+                     f"{v.get('t')}{ok} |")
+        L.append("")
     if ata.get("resumo"):
         L += ["## Resumo", "", ata.get("contexto") or "", "", ata["resumo"], ""]
+    for x in ata.get("por_tema", []):
+        L += [f"### {x['tema']}", "", x["resumo"], ""]
+    if ata.get("escopo"):
+        L += ["## Escopo e entregas", ""] + [
+            f"- **{s['id']}** {s['item']}" + (f" _({s['tema']})_" if s.get("tema") else "") + f" [{s.get('t')}]"
+            for s in ata["escopo"]] + [""]
     for chave, titulo, campo in (("perguntas_abertas", "Perguntas em aberto", "pergunta"),
                                  ("riscos", "Riscos", "risco")):
         if ata.get(chave):
