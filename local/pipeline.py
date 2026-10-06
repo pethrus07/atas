@@ -212,6 +212,7 @@ def processar(s, cfg=None, log=print, forcar=(), estruturar=None, publicar_=None
     True = publica; False = não toca na publicação."""
     import analise_fala
     import audio
+    import avaliar as _aval
     import estruturar as _estr
     import transcribe
 
@@ -282,12 +283,17 @@ def processar(s, cfg=None, log=print, forcar=(), estruturar=None, publicar_=None
             _rodar(s, "publicacao", lambda: _etapa_publicacao(s, a, cfg, log, publicar_), log)
 
         # ── Raio-X da fala (interno) ──
+        rx = {"m": None}
         if s.m.get("legado"):
             s.etapa("raio_x", "pulada", "reunião anterior à v2 já está no histórico")
         elif segs:
             def _rx():
+                # o .pcm ainda existe aqui (a etapa de áudio vem depois); depois, vale o .opus
+                mic = s.mic_pcm if s.mic_pcm.exists() else s.caminho("audio") / "mic.opus"
                 r = analise_fala.processar(segs, s.m.get("titulo"), s.m.get("inicio") or "",
-                                           tipo=s.tipo, sessao_id=s.id)
+                                           tipo=s.tipo, sessao_id=s.id, audio_mic=mic,
+                                           metas=cfg.get("metas_fala"))
+                rx["m"] = r.get("metrics")
                 s.etapa("raio_x", "ok", "nota do Sinapse atualizada" if r.get("vault")
                         else "vault não encontrado nesta máquina")
             _rodar(s, "raio_x", _rx, log)
@@ -307,6 +313,16 @@ def processar(s, cfg=None, log=print, forcar=(), estruturar=None, publicar_=None
                 log(f"  Retenção: áudio apagado de {len(limpas)} reunião(ões) antiga(s)")
         if not s.m.get("legado"):
             _rodar(s, "audio", _aud, log)
+
+        # ── avaliação interna (v2.1): afirmações conferidas, valores, negociação, postura ──
+        # Só reunião de cliente/Parresia com ata estruturada; nunca vai ao entregável.
+        if (a.get("status") in ("estruturada", "revisada") and _aval.deve_avaliar(s, segs, cfg)
+                and (s.status_etapa("avaliacao") != "ok" or "avaliacao" in forcar)):
+            def _av():
+                caminho, meta = _aval.avaliar(s, segs, a, rx["m"], cfg, log)
+                s.etapa("avaliacao", "ok", f"{caminho.name} · {meta['segundos']:.0f}s",
+                        custo_usd=meta.get("custo_usd"))
+            _rodar(s, "avaliacao", _av, log)
 
         falhas = [k for k, v in s.m["etapas"].items() if v.get("status") == "falhou"]
         s.m["processado_em"] = agora_iso()

@@ -12,6 +12,10 @@ Tudo o que sai de uma reunião (página, PDF, .md, índice, o /ata, o log de dec
     encaminhamentos [{id E1.., acao, dono, prazo, prazo_dito, t, citacao, verificado, problemas[]}]
     perguntas_abertas [{id P1.., pergunta, t, citacao, verificado, problemas[]}]
     riscos          [{id R1.., risco, t, citacao, verificado, problemas[]}]
+    valores         [{id V1.., descricao, valor, condicao, t, citacao, verificado, problemas[]}]
+    escopo          [{id S1.., item, tema, t, citacao, verificado, problemas[]}]
+    por_tema        [{tema, resumo}]  — prosa por assunto (v2.1, 06/10/2026: a reunião de 3 h com o
+                      Valter tratou de 3 projetos, e valores e lista de funcionalidades não tinham lugar)
     lacunas         [{ref, falta}]   — calculado, nunca escrito à mão
     gerado          {por, modelo, em, segundos, custo_usd, versao_prompt}
     status          pendente | estruturada | revisada
@@ -59,13 +63,23 @@ ESQUEMA_CLAUDE = {
             "pergunta": _S, "t": _S, "citacao": _S}, "required": ["pergunta", "t", "citacao"]}},
         "riscos": {"type": "array", "items": {"type": "object", "properties": {
             "risco": _S, "t": _S, "citacao": _S}, "required": ["risco", "t", "citacao"]}},
+        "valores": {"type": "array", "items": {"type": "object", "properties": {
+            "descricao": _S, "valor": _S, "condicao": _SN,
+            "natureza": {"type": "string", "enum": ["combinado", "proposto", "citado"]},
+            "t": _S, "citacao": _S},
+            "required": ["descricao", "valor", "condicao", "natureza", "t", "citacao"]}},
+        "escopo": {"type": "array", "items": {"type": "object", "properties": {
+            "item": _S, "tema": _SN, "t": _S, "citacao": _S},
+            "required": ["item", "tema", "t", "citacao"]}},
+        "por_tema": {"type": "array", "items": {"type": "object", "properties": {
+            "tema": _S, "resumo": _S}, "required": ["tema", "resumo"]}},
     },
     "required": ["falantes", "contexto", "resumo", "temas", "decisoes", "encaminhamentos",
-                 "perguntas_abertas", "riscos"],
+                 "perguntas_abertas", "riscos", "valores", "escopo", "por_tema"],
 }
 
 LISTAS = [("decisoes", "D"), ("encaminhamentos", "E"), ("perguntas_abertas", "P"),
-          ("riscos", "R")]
+          ("riscos", "R"), ("valores", "V"), ("escopo", "S")]
 
 
 # ── tempo e texto ────────────────────────────────────────────────────────────
@@ -188,6 +202,8 @@ def _expressao_perto(expr, fl, i, raio_s=120):
 
 _DIAS_SEMANA = {"segunda": 0, "terca": 1, "quarta": 2, "quinta": 3, "sexta": 4, "sabado": 5,
                 "domingo": 6}
+_NUMEROS = {"um": 1, "uma": 1, "dois": 2, "duas": 2, "tres": 3, "quatro": 4, "cinco": 5, "seis": 6,
+            "sete": 7, "oito": 8, "nove": 9, "dez": 10, "quinze": 15, "vinte": 20, "trinta": 30}
 
 
 def _data_coerente(iso, dito, data_reuniao):
@@ -207,6 +223,15 @@ def _data_coerente(iso, dito, data_reuniao):
         return False
     n = norm(dito)
     dias = (d - base).days if base else 0
+    # prazo relativo: "15 dias", "uns 4 5 dias", "quinze dias", "duas semanas" (v2.1). Conta da
+    # data da reunião; numa faixa ("4 5 dias"), vale o maior; tolerância de 1 dia para cada lado
+    rel = re.search(r"\b(\d{1,3}|" + "|".join(_NUMEROS) + r")(?: (?:a |ou )?(\d{1,3}|"
+                    + "|".join(_NUMEROS) + r"))? (dia|dias|semana|semanas)\b", n)
+    if rel and base:
+        num = lambda s: int(s) if s and s.isdigit() else _NUMEROS.get(s)
+        qtd = max(x for x in (num(rel.group(1)), num(rel.group(2))) if x is not None)
+        alvo = qtd * (7 if rel.group(3).startswith("semana") else 1)
+        return abs(dias - alvo) <= 1
     m = re.search(r"\b(\d{1,2}) (\d{1,2})\b", n)          # 15/10 vira "15 10" no norm
     if m and (d.day, d.month) != (int(m.group(1)), int(m.group(2))):
         return False
@@ -296,9 +321,8 @@ def lacunas(ata):
             out.append({"ref": e["id"], "falta": "dono"})
         if not e.get("prazo"):
             out.append({"ref": e["id"], "falta": "prazo"})
-    for d in ata.get("decisoes", []):
-        if not d.get("revisar_em"):
-            out.append({"ref": d["id"], "falta": "data de revisão"})
+    # decisão sem data de revisão NÃO vira lacuna (v2.1): na ata de 05/10 eram 15 de 26 e
+    # escondiam a que importava. A sugestão de revisão fica com o /ata.
     for lista, _ in LISTAS:
         for it in ata.get(lista, []):
             if it.get("verificado") is False:
@@ -321,6 +345,7 @@ def base(sessao, segs, meu_nome):
         "participantes": participantes_iniciais(segs, meu_nome, sessao.participantes_remotos()),
         "contexto": None, "resumo": None, "temas": [],
         "decisoes": [], "encaminhamentos": [], "perguntas_abertas": [], "riscos": [],
+        "valores": [], "escopo": [], "por_tema": [],
         "lacunas": [], "gerado": None, "revisado": None, "status": "pendente",
     }
 
@@ -332,6 +357,7 @@ def montar(sessao, segs, bruto, gerado, meu_nome):
     ata["contexto"] = bruto.get("contexto")
     ata["resumo"] = bruto.get("resumo")
     ata["temas"] = [t for t in bruto.get("temas", []) if t]
+    ata["por_tema"] = [x for x in bruto.get("por_tema", []) if x.get("tema") and x.get("resumo")]
     # nomes deduzidos: nunca por cima do que já está confirmado
     por_rotulo = {f.get("rotulo"): f for f in bruto.get("falantes", [])}
     for p in ata["participantes"]:
