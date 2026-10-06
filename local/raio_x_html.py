@@ -43,6 +43,55 @@ def _chips(d, limite=10):
         f'<span class="chip">{e(k)}<b>{v}</b></span>' for k, v in list(d.items())[:limite]) + "</div>"
 
 
+_ZONA_BOA = {"viva", "com ênfase", "bom"}
+
+
+def _regua(it):
+    """Faixas coloridas da medida, com a marca de onde o valor caiu."""
+    lo, hi = it["escala"]
+    def pos(x):
+        return max(0.0, min(100.0, 100 * (x - lo) / (hi - lo)))
+    segs, rots = [], []
+    for a, b, nome, _ in it["zonas"]:
+        larg = pos(b) - pos(a)
+        cls = "boa" if nome in _ZONA_BOA else ("neutra" if it["chave"] == "tom_hz" else "fora")
+        segs.append(f'<div class="z {cls}" style="width:{larg:.2f}%"></div>')
+        rots.append(f'<span style="width:{larg:.2f}%">{e(nome)}</span>')
+    marca = f'<div class="marca" style="left:{pos(it["valor"]):.2f}%"></div>'
+    return (f'<div class="regua">{"".join(segs)}{marca}</div>'
+            f'<div class="regua-rot">{"".join(rots)}</div>')
+
+
+def _secao_voz(v):
+    import analise_fala
+    itens, evolucao = analise_fala.leitura_voz(v)
+    cartoes = []
+    for it in itens:
+        cls = "boa" if it["zona"] in _ZONA_BOA else ("neutra" if it["chave"] == "tom_hz" else "fora")
+        voce = f'<p class="voce"><b>Você:</b> {e(it["zona"])}'
+        voce += f' — {e(it["efeito"])}.</p>' if it["efeito"] else ".</p>"
+        dica = f'<p class="dica"><b>O que fazer:</b> {e(it["dica"])}</p>' if it["dica"] else ""
+        cartoes.append(
+            f'<div class="voz-item"><div class="voz-top"><div><div class="lb">{e(it["nome"])}</div>'
+            f'<div class="vl">{e(it["valor"])} <small>{e(it["unidade"])}</small></div></div>'
+            f'<span class="zona {cls}">{e(it["zona"])}</span></div>{_regua(it)}'
+            f'<p class="oq">{e(it["o_que_e"])}</p>{voce}{dica}</div>')
+    corpo = ['<section><h2>Voz</h2><p class="sub">Medida no áudio do seu microfone, só nos trechos em que '
+             f'você fala ({v.get("amostra_min")} min de amostra espalhados pela reunião). As faixas são '
+             'referências práticas de fala em reunião, não diagnóstico.</p>', "".join(cartoes)]
+    bl = v.get("blocos") or []
+    if len(bl) >= 2:
+        rot = [f"{b['de_min']}′" for b in bl]
+        corpo.append('<h3>A voz ao longo da reunião</h3>'
+                     + "".join(f'<p class="leitura">{e(t)}</p>' for t in evolucao)
+                     + '<h3>Tom (Hz) por bloco de 30 min</h3>'
+                     + _barras([b["tom_hz"] for b in bl], rot, roxo=True)
+                     + '<h3>Entonação (semitons) por bloco de 30 min</h3>'
+                     + _barras([b["entonacao_st"] for b in bl], rot))
+    corpo.append("</section>")
+    return "".join(corpo)
+
+
 def secoes_avaliacao(md, quais=("## 3.", "## 4.")):
     """Recorta da avaliação interna as seções pedidas (negociação e postura, por padrão)."""
     if not md:
@@ -98,14 +147,7 @@ def pagina_reuniao(reg, avaliacao_md=None):
                      + _barras([b["ppm"] for b in bl], rot, fmt=lambda x: round(x)) + "</section>")
 
     if v:
-        ent = v["entonacao_st"]
-        leitura = ("soa monótona" if ent < 1.5 else "tem pouca variação" if ent < 2.2
-                   else "é viva" if ent <= 4.5 else "varia muito (pode soar agitada)")
-        corpo.append('<section><h2>Voz</h2><div class="kpis">'
-                     + _kpi("Entonação", f"{ent} st", f"sua fala {leitura}")
-                     + _kpi("Volume", f"{v['volume_db']} dBFS", f"variação de {v['volume_variacao_db']} dB")
-                     + _kpi("Tom", f"{v['tom_hz']} Hz", f"amostra de {v['amostra_min']} min")
-                     + "</div></section>")
+        corpo.append(_secao_voz(v))
 
     if p:
         sujeito = (f"{round(p['sujeito_claro'] * 100)}% \"eu\"" if p.get("sujeito_claro") is not None else "—")
@@ -197,4 +239,31 @@ blockquote{margin:0 0 16px;padding:10px 14px;border-left:3px solid var(--roxo-l)
   border-radius:0 10px 10px 0;color:var(--ink)}
 hr{border:none;border-top:1px solid var(--line);margin:28px 0}
 strong{color:#fff}
+.voz-item{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin:0 0 14px}
+.voz-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.voz-item .lb{font-family:var(--mono);font-size:9.5px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted)}
+.voz-item .vl{font-family:var(--disp);font-weight:700;font-size:28px;color:#fff;line-height:1.1;margin-top:4px}
+.voz-item .vl small{font-size:14px;color:var(--muted);font-weight:500}
+.zona{font-family:var(--mono);font-size:11px;letter-spacing:1px;text-transform:uppercase;padding:4px 10px;
+  border-radius:20px;white-space:nowrap}
+.zona.boa{background:var(--roxo-soft);color:#C4B5FD}
+.zona.fora{background:rgba(240,138,93,.14);color:var(--warn)}
+.zona.neutra{background:var(--soft);color:var(--ink)}
+.regua{position:relative;display:flex;height:10px;border-radius:5px;overflow:visible;margin:16px 0 4px}
+.regua .z{height:10px}
+.regua .z:first-child{border-radius:5px 0 0 5px}.regua .z:last-child{border-radius:0 5px 5px 0}
+.regua .z.boa{background:rgba(139,92,246,.55)}
+.regua .z.fora{background:rgba(240,138,93,.35)}
+.regua .z.neutra{background:#2E2E2E}
+.regua .z.neutra:nth-child(2){background:#3A3A3A}
+.regua .marca{position:absolute;top:-5px;width:4px;height:20px;margin-left:-2px;background:var(--accent);
+  border-radius:2px;box-shadow:0 0 0 2px var(--bg)}
+.regua-rot{display:flex;margin-bottom:10px}
+.regua-rot span{font-family:var(--mono);font-size:9.5px;color:var(--dim);text-align:center;overflow:hidden;
+  white-space:nowrap;text-overflow:ellipsis}
+.voz-item p{margin:6px 0 0;font-size:14px}
+.voz-item .oq{color:var(--muted)}
+.voz-item .dica{color:#C4B5FD}
+.leitura{background:var(--surface);border-left:3px solid var(--roxo-l);border-radius:0 10px 10px 0;
+  padding:10px 14px;margin:0 0 10px;font-size:14.5px}
 """

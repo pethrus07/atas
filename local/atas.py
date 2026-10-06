@@ -387,7 +387,13 @@ def c_fala(a):
     for nome, val, meta, ok in m["metas"]:
         print(f"  {'✓' if ok else '!'} {nome}: {val} (meta {meta})")
     if m.get("voz"):
-        print(f"  · Entonação: {m['voz']['entonacao_st']} semitons · volume {m['voz']['volume_db']} dBFS")
+        import analise_fala
+        itens, evolucao = analise_fala.leitura_voz(m["voz"])
+        for it in itens:
+            print(f"  · {it['nome']}: {it['valor']} {it['unidade']} = {it['zona']}"
+                  + (f" ({it['efeito']})" if it["efeito"] else ""))
+        for t in evolucao:
+            print(f"  · {t}")
     if m.get("blocos"):
         print("  · Ao longo da reunião (mul/1k): " + " → ".join(str(b["muletas_por_1000"]) for b in m["blocos"]))
     print(f"\npágina: {r['pagina']}\npainel: {r['dashboard']}")

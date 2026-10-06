@@ -52,7 +52,11 @@ def _fala(m):
     if m.get("blocos"):
         L.append("- Muletas/1k por bloco de 30 min: " + " → ".join(str(b["muletas_por_1000"]) for b in m["blocos"]))
     if m.get("voz"):
-        L.append(f"- Voz: entonação {m['voz']['entonacao_st']} semitons, volume {m['voz']['volume_db']} dBFS")
+        import analise_fala
+        itens, evolucao = analise_fala.leitura_voz(m["voz"])
+        L.append("- Voz: " + "; ".join(f"{it['nome'].lower()} {it['valor']} {it['unidade']} ({it['zona']})"
+                                      for it in itens))
+        L += [f"- {t}" for t in evolucao]
     return "\n".join(L)
 
 

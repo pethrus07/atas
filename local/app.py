@@ -445,8 +445,10 @@ class App(tk.Tk):
         if not fora:
             ttk.Label(caixa, text="✓  todas as metas batidas", style="Sub.TLabel").pack(anchor="w")
         if m.get("voz"):
-            ttk.Label(caixa, text=f"·  entonação {m['voz']['entonacao_st']} semitons "
-                                  f"(perto de 1 soa monótono)", style="Sub.TLabel").pack(anchor="w")
+            itens = {it["chave"]: it for it in analise_fala.leitura_voz(m["voz"])[0]}
+            ent, vol = itens["entonacao_st"], itens["volume_variacao_db"]
+            ttk.Label(caixa, text=f"·  voz {ent['zona']} ({ent['valor']} semitons), "
+                                  f"volume {vol['zona']}", style="Sub.TLabel").pack(anchor="w")
 
         def abrir(caminho):
             import os

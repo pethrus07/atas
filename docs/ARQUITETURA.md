@@ -512,3 +512,10 @@ em `docs/MELHORIAS.md`. Em uma linha cada:
   voz, postura, palavras e, quando existe, a negociação e a postura da avaliação interna. O painel
   (`raio-x.html`) mostra a evolução e leva a cada página. `atas.py fala <id>` abre a página.
 - **Avaliação interna em HTML** (`avaliacao-interna.html`), no mesmo tema; o botão da janela abre ela.
+- **Leitura da voz** (`analise_fala.leitura_voz`, `_FAIXAS_VOZ`): "st, dB e Hz não significam nada
+  soltos" (Pedro, 06/10). Cada medida (entonação, variação de volume, nível da gravação, tom) vem com
+  o que é, as faixas (régua com marca na página), a zona em que caiu, o efeito e o que fazer. A voz
+  também é medida por bloco de 30 min: tom que sobe ≥1,5 semitom = tensão; que cai = cansaço;
+  entonação que cai ≥0,5 = fala ficando monótona. O nível da gravação é do **microfone**, não da voz.
+  As faixas são referência prática de fala em reunião, não diagnóstico. A mesma leitura vai ao
+  relatório `.md`, ao `atas.py fala`, à janela, à nota do Sinapse e ao prompt da avaliação.

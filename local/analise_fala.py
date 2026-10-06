@@ -188,10 +188,28 @@ def _pcm_do_audio(caminho):
     return np.frombuffer(r.stdout, dtype=np.int16) if r.returncode == 0 and r.stdout else None
 
 
-def voz(segments, caminho_mic, sr=16000, max_min=20):
+def _voz_de(frames_db, frames_f0):
+    """Os números de voz de um conjunto de quadros (a reunião inteira ou um bloco)."""
+    import numpy as np
+    if len(frames_db) < 50 or len(frames_f0) < 50:
+        return None
+    db, f0 = np.array(frames_db), np.array(frames_f0)
+    med = float(np.median(f0))
+    st = 12 * np.log2(f0 / med)
+    st = st[np.abs(st) < 12]                                  # erro de oitava fora
+    return {"volume_db": round(float(np.median(db)), 1),
+            "volume_variacao_db": round(float(np.std(db)), 1),
+            "tom_hz": round(med),
+            "tom_p10_hz": round(float(np.percentile(f0, 10))),
+            "tom_p90_hz": round(float(np.percentile(f0, 90))),
+            "entonacao_st": round(float(np.std(st)), 2)}
+
+
+def voz(segments, caminho_mic, sr=16000, max_min=20, bloco_min=30):
     """Volume e entonação da SUA voz, medidos no áudio do microfone, só nos trechos em que você fala.
-    Amostra até `max_min` minutos espalhados pela reunião (3 h de áudio inteiro é desperdício).
-    Entonação = variação do tom em semitons: perto de 1 soa monótono; 2 a 4, fala viva."""
+    Amostra até `max_min` minutos espalhados pela reunião (3 h de áudio inteiro é desperdício) e
+    guarda a evolução por bloco de `bloco_min` min: tom que sobe = tensão; entonação que cai = cansaço.
+    Entonação = variação do tom em semitons (1 semitom = duas teclas vizinhas do piano)."""
     import numpy as np
     x = _pcm_do_audio(caminho_mic)
     if x is None or len(x) < sr:
@@ -203,7 +221,7 @@ def voz(segments, caminho_mic, sr=16000, max_min=20):
     passo = max(1, int(total / (max_min * 60)))
     amostra = voce[::passo]
     janela, salto = int(0.04 * sr), int(0.02 * sr)
-    db, f0 = [], []
+    db, f0, por_bloco = [], [], {}
     lag_min, lag_max = sr // 400, sr // 75                    # tom de voz entre 75 e 400 Hz
     for s in amostra:
         seg = np.asarray(x[int(s["start"] * sr):int(s["end"] * sr)], dtype=np.float32) / 32768.0
@@ -215,25 +233,130 @@ def voz(segments, caminho_mic, sr=16000, max_min=20):
         rms = np.sqrt((q ** 2).mean(axis=1)) + 1e-9
         d = 20 * np.log10(rms)
         voz_on = d > (np.percentile(d, 60) if len(d) > 4 else d.min())   # só os quadros com voz
-        db.extend(d[voz_on].tolist())
         espec = np.fft.rfft(q[voz_on], n=2 * janela)
         ac = np.fft.irfft(np.abs(espec) ** 2)[:, :janela]
         ac = ac / (ac[:, :1] + 1e-12)
         faixa = ac[:, lag_min:lag_max]
         lag = faixa.argmax(axis=1) + lag_min
         sonoro = faixa.max(axis=1) > 0.45                     # periodicidade clara = vogal
-        f0.extend((sr / lag[sonoro]).tolist())
-    if len(db) < 50 or len(f0) < 50:
+        d_on, f_on = d[voz_on].tolist(), (sr / lag[sonoro]).tolist()
+        db.extend(d_on)
+        f0.extend(f_on)
+        b = por_bloco.setdefault(int(s["start"] // (bloco_min * 60)), ([], []))
+        b[0].extend(d_on)
+        b[1].extend(f_on)
+    geral = _voz_de(db, f0)
+    if not geral:
         return None
-    db, f0 = np.array(db), np.array(f0)
-    med = float(np.median(f0))
-    st = 12 * np.log2(f0 / med)
-    st = st[np.abs(st) < 12]                                  # erro de oitava fora
-    return {"volume_db": round(float(np.median(db)), 1),
-            "volume_variacao_db": round(float(np.std(db)), 1),
-            "tom_hz": round(med),
-            "entonacao_st": round(float(np.std(st)), 2),
-            "amostra_min": round(sum(s["end"] - s["start"] for s in amostra) / 60, 1)}
+    geral["amostra_min"] = round(sum(s["end"] - s["start"] for s in amostra) / 60, 1)
+    blocos = []
+    for k in sorted(por_bloco):
+        v = _voz_de(*por_bloco[k])
+        if v:
+            blocos.append({"de_min": k * bloco_min, **v})
+    geral["blocos"] = blocos if len(blocos) >= 2 else []
+    return geral
+
+
+# ── leitura da voz: número sozinho não diz nada (pedido do Pedro, 06/10/2026) ─────────────
+# Cada medida vira: o que é · a faixa · onde você está · o que fazer. As faixas são referências
+# práticas de fala em reunião, não diagnóstico.
+_FAIXAS_VOZ = {
+    "entonacao_st": {
+        "nome": "Entonação", "unidade": "semitons", "escala": (0, 7),
+        "o_que_e": "Quanto o seu tom sobe e desce enquanto você fala. Um semitom é a distância entre "
+                   "duas teclas vizinhas do piano. É o que faz a fala soar viva ou monótona.",
+        "zonas": [(0, 1.5, "monótona", "a fala soa chapada e cansa quem ouve"),
+                  (1.5, 2.2, "pouco variada", "dá para a fala soar mais expressiva"),
+                  (2.2, 4.5, "viva", "faixa boa para conversa e apresentação"),
+                  (4.5, 7, "agitada", "a fala pode soar ansiosa ou exaltada")],
+        "dica": {"monótona": "suba o tom ao abrir uma ideia nova e desça no ponto final; leia um texto em voz alta marcando as ênfases.",
+                 "pouco variada": "escolha uma palavra por frase para enfatizar, subindo o tom nela.",
+                 "viva": "mantenha; cuide para não perder isso no fim das reuniões longas.",
+                 "agitada": "faça pausas curtas antes das frases importantes e baixe o tom no final delas."}},
+    "volume_variacao_db": {
+        "nome": "Variação de volume", "unidade": "dB", "escala": (0, 12),
+        "o_que_e": "Quanto o seu volume muda dentro das falas. É a ênfase: falar mais forte o que importa "
+                   "e mais baixo o que é detalhe.",
+        "zonas": [(0, 3, "chapada", "tudo no mesmo volume, sem ênfase"),
+                  (3, 8, "com ênfase", "o volume acompanha o que importa"),
+                  (8, 12, "oscilando", "pode ser o fone se afastando e se aproximando da boca")],
+        "dica": {"chapada": "fale um pouco mais forte a palavra-chave de cada frase.",
+                 "com ênfase": "mantenha.",
+                 "oscilando": "mantenha o fone na mesma posição; se não for isso, controle o volume nas falas longas."}},
+    "volume_db": {
+        "nome": "Nível da gravação", "unidade": "dBFS", "escala": (-50, -10),
+        "o_que_e": "O quanto a sua voz chega forte no microfone, em decibéis abaixo do máximo (0). "
+                   "Depende do fone e da distância da boca, não de quanto você fala alto para o outro: "
+                   "o aplicativo da chamada ajusta o volume. Serve para comparar reuniões com o mesmo fone.",
+        "zonas": [(-50, -40, "muito baixo", "a transcrição pode perder palavras"),
+                  (-40, -30, "baixo", "funciona, mas aproximar o microfone ajuda a transcrição"),
+                  (-30, -18, "bom", "faixa ideal para gravação de fala"),
+                  (-18, -10, "alto", "risco de distorcer nos picos")],
+        "dica": {"muito baixo": "aproxime o microfone da boca ou suba o ganho dele no Windows.",
+                 "baixo": "aproxime um pouco o microfone (uns dois dedos da boca, de lado).",
+                 "bom": "mantenha.",
+                 "alto": "afaste um pouco o microfone."}},
+    "tom_hz": {
+        "nome": "Tom da voz", "unidade": "Hz", "escala": (75, 300),
+        "o_que_e": "A altura média da sua voz (grave ou aguda). Sozinha não é boa nem ruim: é a sua "
+                   "voz. O que importa é se ela sobe ao longo da reunião (tensão, pressa) e quanto "
+                   "varia (a entonação).",
+        "zonas": [(75, 140, "grave", "é a sua voz natural, não há o que corrigir; olhe a evolução abaixo"),
+                  (140, 200, "média", "é a sua voz natural, não há o que corrigir; olhe a evolução abaixo"),
+                  (200, 300, "aguda", "é a sua voz natural, não há o que corrigir; olhe a evolução abaixo")],
+        "dica": {}},
+}
+
+
+def _zona(chave, valor):
+    zonas = _FAIXAS_VOZ[chave]["zonas"]
+    for a, b, nome, efeito in zonas:
+        if a <= valor < b:
+            return nome, efeito
+    return (zonas[0][2], zonas[0][3]) if valor < zonas[0][0] else (zonas[-1][2], zonas[-1][3])
+
+
+def leitura_voz(v):
+    """([{chave, nome, valor, unidade, o_que_e, zona, efeito, dica, escala, zonas}], [evolução em texto])."""
+    import math
+    if not v:
+        return [], []
+    itens = []
+    for chave in ("entonacao_st", "volume_variacao_db", "volume_db", "tom_hz"):
+        f = _FAIXAS_VOZ[chave]
+        zona, efeito = _zona(chave, v[chave])
+        extra = ""
+        if chave == "tom_hz" and v.get("tom_p10_hz"):
+            extra = f" Você usa de {v['tom_p10_hz']} a {v['tom_p90_hz']} Hz na maior parte das falas."
+        itens.append({"chave": chave, "nome": f["nome"], "valor": v[chave], "unidade": f["unidade"],
+                      "o_que_e": f["o_que_e"] + extra, "zona": zona, "efeito": efeito,
+                      "dica": f["dica"].get(zona, ""), "escala": f["escala"], "zonas": f["zonas"]})
+    evolucao = []
+    bl = v.get("blocos") or []
+    if len(bl) >= 2:
+        ini, fim = bl[0], bl[-1]
+        subida = 12 * math.log2(fim["tom_hz"] / ini["tom_hz"]) if ini["tom_hz"] else 0
+        if subida >= 1.5:
+            evolucao.append(f"O tom subiu {subida:.1f} semitons do começo ao fim ({ini['tom_hz']} → {fim['tom_hz']} Hz). "
+                            "Costuma ser sinal de tensão ou pressa: respire antes de responder no fim da reunião.")
+        elif subida <= -1.5:
+            evolucao.append(f"O tom caiu {abs(subida):.1f} semitons do começo ao fim ({ini['tom_hz']} → {fim['tom_hz']} Hz): "
+                            "a voz foi ficando mais baixa, o que costuma acompanhar o cansaço.")
+        else:
+            evolucao.append(f"O tom ficou estável do começo ao fim ({ini['tom_hz']} → {fim['tom_hz']} Hz): "
+                            "sem sinal de tensão na voz.")
+        de = fim["entonacao_st"] - ini["entonacao_st"]
+        if de <= -0.5:
+            evolucao.append(f"A entonação caiu de {ini['entonacao_st']} para {fim['entonacao_st']} semitons: a fala foi "
+                            "ficando mais monótona. Em reunião longa, faça uma pausa ou encurte.")
+        elif de >= 0.5:
+            evolucao.append(f"A entonação subiu de {ini['entonacao_st']} para {fim['entonacao_st']} semitons: a fala ficou "
+                            "mais expressiva (ou mais exaltada) no fim.")
+        else:
+            evolucao.append(f"A entonação se manteve ({ini['entonacao_st']} → {fim['entonacao_st']} semitons): "
+                            "a voz não perdeu a vida com o cansaço.")
+    return itens, evolucao
 
 
 # ── postura (v2.2): o que a avaliação manual de 05/10 apontou, agora medido em toda reunião ──
@@ -391,12 +514,24 @@ def _relatorio_md(reg, pasta):
                      f"{b['conf_por_min']} | {b['muletas_por_1000']} |")
     v = m.get("voz")
     if v:
+        itens, evolucao = leitura_voz(v)
         L += ["", "## Voz (áudio do microfone)",
-              f"- Volume mediano: {v['volume_db']} dBFS (variação {v['volume_variacao_db']} dB)",
-              f"- Tom mediano: {v['tom_hz']} Hz",
-              f"- Entonação: **{v['entonacao_st']} semitons** de variação "
-              "(perto de 1 soa monótono; 2 a 4 é fala viva)",
-              f"- Amostra: {v['amostra_min']} min das suas falas, espalhados pela reunião"]
+              f"_Amostra: {v['amostra_min']} min das suas falas, espalhados pela reunião. As faixas são "
+              "referências práticas de fala em reunião, não diagnóstico._"]
+        for it in itens:
+            faixas = " · ".join(f"{n} {a}–{b}" for a, b, n, _ in it["zonas"])
+            L += ["", f"### {it['nome']}: {it['valor']} {it['unidade']} → **{it['zona']}**",
+                  f"- O que é: {it['o_que_e']}",
+                  f"- Faixas: {faixas}"]
+            if it["efeito"]:
+                L.append(f"- Você: {it['efeito']}.")
+            if it["dica"]:
+                L.append(f"- O que fazer: {it['dica']}")
+        if evolucao:
+            L += ["", "### A voz ao longo da reunião"] + [f"- {t}" for t in evolucao]
+            L += ["", "| Bloco | Tom (Hz) | Entonação (st) | Variação de volume (dB) |", "|---|---|---|---|"]
+            L += [f"| {b['de_min']} min | {b['tom_hz']} | {b['entonacao_st']} | {b['volume_variacao_db']} |"
+                  for b in v["blocos"]]
     if m.get("metas"):
         L += ["", "## Metas", "", "| | Agora | Meta | |", "|---|---|---|---|"]
         for nome, val, meta, ok in m["metas"]:
@@ -442,7 +577,8 @@ def _nota_vault_md(linhas):
         f"- Ritmo: **{(ult.get('ritmo') or {}).get('ppm', '—')}** palavras/min · maior monólogo "
         f"**{(ult.get('ritmo') or {}).get('maior_monologo_s', '—')} s** · interrompeu "
         f"**{(ult.get('ritmo') or {}).get('interrompeu', '—')}** vezes",
-        (f"- Voz: entonação **{ult['voz']['entonacao_st']} semitons** (perto de 1 = monótono)"
+        ("- Voz: " + " · ".join(f"{it['nome'].lower()} **{it['valor']} {it['unidade']}** ({it['zona']})"
+                                for it in leitura_voz(ult["voz"])[0])
          if ult.get("voz") else "- Voz: sem áudio do microfone nesta reunião"),
         (f"- Postura: \"aí\" **{ult['postura']['ai_por_1000']}**/1k · \"a gente\" "
          f"**{ult['postura']['a_gente_por_1000']}**/1k (metas 1 e 2 de [[fala-e-apresentacao]]) · "
