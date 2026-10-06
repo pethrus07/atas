@@ -496,3 +496,19 @@ em `docs/MELHORIAS.md`. Em uma linha cada:
   Claude roda com **Read, Grep, Glob** em `~/Projetos` + a memória do Claude Code e escreve
   `avaliacao-interna.md`: afirmações do Pedro conferidas, valores contra o piso de hora,
   negociação, postura e o que corrigir com o cliente. Nunca entra no entregável.
+
+## 16 · v2.2 — tema RYZE escuro e Raio-X com postura (06/10/2026)
+
+- **Tema único** (`tema.py`): ata interna, entregável do cliente, Raio-X e avaliação interna usam os
+  mesmos tokens RYZE escuros (preto #0D0D0D, dourado #FFB700, roxo #6A28C9; Space Grotesk, Plus
+  Jakarta Sans, JetBrains Mono). O PDF sai escuro, sem margem branca. **Mudou uma regra de 30/09:**
+  a ata interna (inclusive Parresia) passou a levar a marca RYZE, com o selo **"Uso interno"**; o que
+  continua valendo é que reunião interna **não sai da máquina** (sem entregável, sem publicação).
+- **Raio-X com postura** (`analise_fala.postura`): sujeito ("eu" × "a gente"), "aí" e "a gente" por
+  mil palavras (metas 1 e 2 de `fala-e-apresentacao`), promessa no reflexo ("já dá", "já existe",
+  "é só…", sem contar negação), certeza absoluta, concordância reflexa, cortes ("Não. Não.") e as
+  **frases para revisar** com timestamp — é onde nasce afirmação errada para o cliente.
+- **Página por reunião** (`raio_x_html.pagina_reuniao`): metas, como você falou, cansaço em gráfico,
+  voz, postura, palavras e, quando existe, a negociação e a postura da avaliação interna. O painel
+  (`raio-x.html`) mostra a evolução e leva a cada página. `atas.py fala <id>` abre a página.
+- **Avaliação interna em HTML** (`avaliacao-interna.html`), no mesmo tema; o botão da janela abre ela.

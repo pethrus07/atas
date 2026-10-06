@@ -454,12 +454,16 @@ class App(tk.Tk):
                 os.startfile(str(caminho))
         linha = ttk.Frame(caixa)
         linha.pack(fill="x", pady=(_p(4), 0))
+        pagina = analise_fala.FALA_DIR / analise_fala._arquivo_pagina(reg) if "safe" in reg else None
         ttk.Button(linha, text="Ver o Raio-X completo", style="Link.TButton",
-                   command=lambda: abrir(analise_fala.FALA_DIR / "raio-x.html")).pack(side="left")
-        aval = s.caminho("avaliacao-interna.md")
-        if aval.exists():
+                   command=lambda: abrir(pagina if pagina and pagina.exists()
+                                         else analise_fala.FALA_DIR / "raio-x.html")).pack(side="left")
+        import avaliar
+        aval = avaliar.mais_recente(s)
+        if aval:
+            alvo = aval.with_suffix(".html") if aval.with_suffix(".html").exists() else aval
             ttk.Button(linha, text="Avaliação interna", style="Link.TButton",
-                       command=lambda: abrir(aval)).pack(side="right")
+                       command=lambda: abrir(alvo)).pack(side="right")
 
     def pronto(self, s):
         self.processando = False

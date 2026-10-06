@@ -13,10 +13,11 @@ def _a(raiz, tipo="parresia"):
     return ata.montar(s, segs_exemplo(), _bruto(), {}, "Pedro")
 
 
-def test_interna_nao_tem_marca_ryze(raiz):
+def test_interna_tem_tema_ryze_escuro_e_selo_de_uso_interno(raiz):
+    # v2.2 (06/10/2026): "tema escuro, RYZE branded, tudo". Antes a interna era neutra.
     h = render.html(_a(raiz), segs_exemplo())
-    assert "RYZE" not in h and "ryzecode" not in h
-    assert "Parresia (interna)" in h
+    assert "RYZE" in h and "#0D0D0D" in h
+    assert "Uso interno" in h and "Parresia (interna)" in h
     assert "Migrar tudo para Kubernetes" in h and "origem não localizada" in h
 
 

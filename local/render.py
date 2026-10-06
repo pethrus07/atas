@@ -20,23 +20,10 @@ import datetime as _dt
 import html as _html
 
 import ata as _ata
+import tema as _tema
 from sessao import TIPOS
 
-MARCA = "RYZE"
-SITE = "ryzecode.com.br"
-LOGO_PATH = (
-    "M308.484 282.06L244.072 357.593H211L231.18 392H350.77L400 520H244.159L171.652 352.605"
-    "L177.931 342.661L225 254.736L211.896 226.997L191.439 180.558L159.957 267.483L127.315 "
-    "354.301L112.868 394.729H139.992L194.254 520H0L200 0L308.484 282.06Z")
-
-
-def e(s):
-    return _html.escape("" if s is None else str(s), quote=True)
-
-
-def _logo(fill, h):
-    return (f'<svg viewBox="0 0 400 520" xmlns="http://www.w3.org/2000/svg" '
-            f'style="height:{h};width:auto;display:block"><path d="{LOGO_PATH}" fill="{fill}"/></svg>')
+e = _tema.e          # escape de HTML (o mesmo do tema)
 
 
 def data_br(iso, com_hora=True):
@@ -129,10 +116,8 @@ def html(ata, segs, cliente=False, impressao=False):
         lis = []
         for d in dec:
             meta = [nome(d.get("quem")) or lacuna("quem decidiu não ficou claro")]
-            if d.get("revisar_em"):
+            if d.get("revisar_em"):           # sem data, nada (v2.1: deixou de ser lacuna, era ruído)
                 meta.append(f"revisar em {data_curta(d['revisar_em'])}")
-            elif not cliente:
-                meta.append(lacuna("sem data de revisão"))
             lis.append(f'<li><p>{e(d["decisao"])}</p><div class="meta">'
                        f'{" · ".join(m if m.startswith("<") else e(m) for m in meta)}'
                        f'{origem(d)}</div></li>')
@@ -236,38 +221,25 @@ def html(ata, segs, cliente=False, impressao=False):
         f"{ata.get('duracao_min')} min" if ata.get("duracao_min") else None,
         ", ".join(pessoas) if pessoas else None] if x)
 
-    if tema == "ryze":
-        topo = (f'<header class="capa"><div class="mark-bg">{_logo("#FFB700", "220px")}</div>'
-                f'<div class="capa-top">{_logo("#FFB700", "30px")}<span class="wordmark">'
-                f'{MARCA}</span></div><div class="eyebrow">Ata de reunião</div>'
-                f'<h1>{e(ata.get("titulo"))}</h1><div class="data">{e(meta_topo)}</div></header>')
-        rodape = f'{_logo("#CC9200", "14px")}<span>{MARCA} · {SITE}</span>'
-        fontes = ('<link rel="preconnect" href="https://fonts.googleapis.com">'
-                  '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
-                  '<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:'
-                  'wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family='
-                  'JetBrains+Mono:wght@500&display=swap" rel="stylesheet">')
+    # v2.2: tudo no tema RYZE escuro (pedido do Pedro, 06/10/2026); a interna leva o selo de uso interno
+    rotulo = TIPOS.get(tipo, tipo)
+    if cliente:
+        topo = _tema.capa(ata.get("titulo"), "Ata de reunião", meta_topo, selo=None)
+        rodape = _tema.rodape("ata de reunião")
     else:
-        rotulo = TIPOS.get(tipo, tipo)
-        topo = (f'<header class="topo"><div class="eyebrow">Ata · {e(rotulo)}'
-                f'{" · " + e(ata["projeto"]) if ata.get("projeto") else ""}</div>'
-                f'<h1>{e(ata.get("titulo"))}</h1><div class="data">{e(meta_topo)}</div></header>')
-        rodape = "<span>Atas · uso interno · gerado nesta máquina</span>"
-        fontes = ""
+        proj = f" · {ata['projeto']}" if ata.get("projeto") else ""
+        topo = _tema.capa(ata.get("titulo"), f"Ata · {rotulo}{proj}", meta_topo, selo="Uso interno")
+        rodape = _tema.rodape("uso interno · gerado nesta máquina")
 
     return (f'<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width, initial-scale=1">'
             f'<meta name="robots" content="noindex"><title>{e(ata.get("titulo"))}</title>'
-            f'{fontes}<style>{CSS_BASE}{CSS_RYZE if tema == "ryze" else CSS_INTERNO}</style>'
+            f'{_tema.FONTES}<style>{_tema.CSS}{CSS_BASE}</style>'
             f'</head><body class="{tema}"><div class="wrap">{topo}{"".join(blocos)}'
-            f'<footer class="rodape">{rodape}</footer></div></body></html>')
+            f'{rodape}</div></body></html>')
 
 
 CSS_BASE = """
-*{box-sizing:border-box}
-html{-webkit-print-color-adjust:exact;print-color-adjust:exact}
-body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.6;
-  -webkit-font-smoothing:antialiased}
 .wrap{max-width:780px;margin:0 auto;padding:48px 24px 24px}
 section{margin:0 0 44px}
 h1{font-family:var(--disp);font-weight:700;letter-spacing:-.5px;line-height:1.15;margin:0 0 12px;
@@ -312,12 +284,8 @@ ul.simples li{margin:0 0 8px;font-size:14.5px}
   text-align:left}
 .fala.eu .txt{background:var(--me)}
 .aviso-estado p{margin:0;padding:14px 16px;border:1px solid var(--warn);border-radius:10px;font-size:14px}
-.rodape{display:flex;align-items:center;gap:9px;padding:36px 0 8px;color:var(--muted);font-size:11.5px;
-  font-family:var(--mono)}
 code{font-family:var(--mono);font-size:.92em}
-@page{size:A4;margin:16mm}
 @media print{
-  body{background:#fff}.wrap{max-width:none;padding:0}
   section,.itens li,tr,.fala{break-inside:avoid}
   details.transc{break-before:page}
   /* no papel, "+ Mais" não é controle de nada: some o rótulo, e a transcrição
@@ -328,30 +296,6 @@ code{font-family:var(--mono);font-size:.92em}
     text-transform:uppercase;color:var(--accent);padding:0 0 8px}
 }
 """
-
-CSS_INTERNO = """
-:root{--bg:#FBFBF9;--ink:#1D1D1B;--muted:#6E6E69;--accent:#3A5A50;--soft:#F0F0EC;--me:#E6EEE9;
-  --warn:#B4552D;
-  --sans:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;--disp:var(--sans);
-  --mono:ui-monospace,Consolas,"Cascadia Mono",monospace}
-.topo{margin:0 0 52px}
-"""
-
-CSS_RYZE = """
-:root{--bg:#F5F5F5;--ink:#0D0D0D;--muted:#6B6B6B;--accent:#CC9200;--soft:#EBEBEB;--me:#FFF6DE;
-  --warn:#B4552D;
-  --sans:'Plus Jakarta Sans',-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
-  --disp:'Space Grotesk',var(--sans);--mono:'JetBrains Mono',ui-monospace,Consolas,monospace}
-.capa{position:relative;overflow:hidden;background:#0D0D0D;color:#FAFAFA;border-radius:18px;
-  padding:44px 44px 40px;margin-bottom:52px}
-.capa .mark-bg{position:absolute;right:-34px;bottom:-52px;opacity:.07;pointer-events:none}
-.capa-top{display:flex;align-items:center;gap:12px;margin-bottom:38px}
-.wordmark{font-family:var(--disp);font-weight:700;letter-spacing:5px;font-size:16px}
-.capa .eyebrow{color:#FFB700}
-.capa h1{color:#FAFAFA}
-.capa .data{color:#B0B0B0}
-"""
-
 
 # ── Markdown ─────────────────────────────────────────────────────────────────
 def markdown(ata, segs):
@@ -368,10 +312,10 @@ def markdown(ata, segs):
     if ata.get("decisoes"):
         L += ["## Decisões", ""]
         for d in ata["decisoes"]:
-            rev = f"revisar em {d['revisar_em']}" if d.get("revisar_em") else "sem data de revisão"
+            rev = f"revisar em {d['revisar_em']}" if d.get("revisar_em") else ""
             ok = "" if d.get("verificado") is not False else " ⚠ origem não localizada"
-            L.append(f"- **{d['id']}** {d['decisao']} — {nome(d.get('quem')) or '?'} · {rev} "
-                     f"· [{d.get('t')}]{ok}")
+            L.append(f"- **{d['id']}** {d['decisao']} — {nome(d.get('quem')) or '?'}"
+                     f"{' · ' + rev if rev else ''} · [{d.get('t')}]{ok}")
         L.append("")
     if ata.get("encaminhamentos"):
         L += ["## Encaminhamentos", "", "| | O quê | Quem | Até | Origem |", "|---|---|---|---|---|"]

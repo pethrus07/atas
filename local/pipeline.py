@@ -290,9 +290,11 @@ def processar(s, cfg=None, log=print, forcar=(), estruturar=None, publicar_=None
             def _rx():
                 # o .pcm ainda existe aqui (a etapa de áudio vem depois); depois, vale o .opus
                 mic = s.mic_pcm if s.mic_pcm.exists() else s.caminho("audio") / "mic.opus"
+                av = _aval.mais_recente(s)
                 r = analise_fala.processar(segs, s.m.get("titulo"), s.m.get("inicio") or "",
                                            tipo=s.tipo, sessao_id=s.id, audio_mic=mic,
-                                           metas=cfg.get("metas_fala"))
+                                           metas=cfg.get("metas_fala"),
+                                           avaliacao_md=av.read_text(encoding="utf-8") if av else None)
                 rx["m"] = r.get("metrics")
                 s.etapa("raio_x", "ok", "nota do Sinapse atualizada" if r.get("vault")
                         else "vault não encontrado nesta máquina")
@@ -320,6 +322,7 @@ def processar(s, cfg=None, log=print, forcar=(), estruturar=None, publicar_=None
                 and (s.status_etapa("avaliacao") != "ok" or "avaliacao" in forcar)):
             def _av():
                 caminho, meta = _aval.avaliar(s, segs, a, rx["m"], cfg, log)
+                analise_fala.pagina_da_reuniao(s.id, caminho.read_text(encoding="utf-8"))
                 s.etapa("avaliacao", "ok", f"{caminho.name} · {meta['segundos']:.0f}s",
                         custo_usd=meta.get("custo_usd"))
             _rodar(s, "avaliacao", _av, log)

@@ -63,7 +63,7 @@ def test_parresia_nao_sai_da_maquina(raiz, falsos):
     assert et["publicacao"]["status"] == "pulada"
     assert "ata.pdf" in falsos["pdf"] and "entregavel.pdf" not in falsos["pdf"]
     assert not s.caminho("entregavel.html").exists()
-    assert "RYZE" not in s.caminho("ata.html").read_text(encoding="utf-8")
+    assert "Uso interno" in s.caminho("ata.html").read_text(encoding="utf-8")
     assert Sessao.abrir(s.pasta).m["estado"] == "pronto"
 
 

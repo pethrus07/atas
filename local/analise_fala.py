@@ -28,7 +28,7 @@ MULETAS = ["aí", "tá", "assim", "cara", "tipo", "então", "pô", "enfim", "sab
            "realmente", "óbvio", "digamos", "mano", "simplesmente", "olha"]
 FRASES = ["a gente", "por exemplo", "e aí", "tipo assim", "no caso", "quer dizer",
           "na verdade", "meio que", "ou seja", "é o seguinte", "de certa forma",
-          "cada vez mais", "mais ou menos", "e tal"]
+          "cada vez mais", "mais ou menos", "e tal", "muito simples"]   # "muito simples": abertura de explicação (14× em 05/10)
 TAGS = ["entendeu", "certo", "né", "tá", "não é", "sabe", "correto", "beleza", "saca"]
 
 
@@ -92,6 +92,8 @@ METAS_PADRAO = {
     "muletas_por_1000": 30,           # meta de [[fala-e-apresentacao]]: abaixo de 30, rumo a 20
     "ppm": [130, 180],                # palavras por minuto nos seus turnos: conversa clara sem arrastar
     "maior_monologo_s": 120,          # explicar demais: acima de 2 min sem deixar o outro entrar
+    "ai_por_1000": 8,                 # meta 1 da nota fala-e-apresentacao: derrubar o "aí"
+    "a_gente_por_1000": 8,            # meta 2: trocar "a gente" por sujeito claro
 }
 
 
@@ -234,6 +236,59 @@ def voz(segments, caminho_mic, sr=16000, max_min=20):
             "amostra_min": round(sum(s["end"] - s["start"] for s in amostra) / 60, 1)}
 
 
+# ── postura (v2.2): o que a avaliação manual de 05/10 apontou, agora medido em toda reunião ──
+CERTEZA = ["com certeza", "absolutamente", "obviamente", "óbvio", "claro que", "sem dúvida",
+           "certeza absoluta", "100%", "com toda certeza"]
+PROMESSA = ["já dá", "já existe", "já tem", "já faz", "isso faz", "dá pra fazer", "dá para fazer",
+            "tranquilamente", "é muito fácil", "é só colocar", "é só importar",
+            "em cinco minutos", "rapidinho"]
+CONCESSAO = ["sem problema", "sem problemas", "tranquilo", "pode ser", "pode deixar", "fechado",
+             "combinado", "pode sim"]
+
+
+def _conta(frases, blob, sem_negacao=False):
+    neg = r"(?<!não )(?<!nao )(?<!nem )" if sem_negacao else ""
+    return {f: len(re.findall(neg + r"(?<!\w)" + re.escape(f) + r"(?!\w)", blob)) for f in frases}
+
+
+def postura(segments, max_frases=15):
+    """Sujeito, certeza, promessa no reflexo, concessão e corte. Só as falas de "Você".
+    "Frases para revisar" = onde houve promessa ou certeza absoluta: é ali que nasce afirmação
+    errada para o cliente (na reunião de 05/10, seis das erradas vieram de um "já dá")."""
+    voce = [s for s in segments if s.get("speaker") == "Você"]
+    blob = " ".join(s.get("text", "") for s in voce).lower()
+    total = len(_toks(blob)) or 1
+    eu = len(re.findall(r"(?<!\w)eu(?!\w)", blob))
+    a_gente = len(re.findall(r"(?<!\w)a gente(?!\w)", blob))
+    ai = len(re.findall(r"(?<!\w)aí(?!\w)", blob))
+    cert = {k: v for k, v in _conta(CERTEZA, blob).items() if v}
+    prom = {k: v for k, v in _conta(PROMESSA, blob, sem_negacao=True).items() if v}
+    conc = {k: v for k, v in _conta(CONCESSAO, blob).items() if v}
+    cortes = sum(1 for s in voce if re.match(r"\s*não[.,!]?\s+não\b", s.get("text", "").lower()))
+    frases = []
+    # "não dá pra fazer" não é promessa: a palavra logo antes não pode ser uma negação
+    _neg = r"(?<!não )(?<!nao )(?<!nem )"
+    for s in voce:
+        t = s.get("text", "").lower()
+        motivo = ("promessa" if any(re.search(_neg + r"(?<!\w)" + re.escape(p) + r"(?!\w)", t) for p in PROMESSA)
+                  else "certeza" if any(re.search(r"(?<!\w)" + re.escape(c) + r"(?!\w)", t) for c in CERTEZA)
+                  else None)
+        if motivo and len(_toks(t)) >= 5:          # "Muito simples." sozinho não diz nada
+            frases.append({"t": round(s.get("start", 0)), "texto": s.get("text", "").strip(), "motivo": motivo})
+    frases.sort(key=lambda f: (f["motivo"] != "promessa", f["t"]))
+    return {
+        "eu": eu, "a_gente": a_gente,
+        "sujeito_claro": round(eu / (eu + a_gente), 2) if (eu + a_gente) else None,
+        "a_gente_por_1000": round(1000 * a_gente / total, 1),
+        "ai_por_1000": round(1000 * ai / total, 1),
+        "certeza": cert, "certeza_total": sum(cert.values()),
+        "promessa": prom, "promessa_total": sum(prom.values()),
+        "concessao": conc, "concessao_total": sum(conc.values()),
+        "cortes": cortes,
+        "frases_revisar": sorted(frases[:max_frases], key=lambda f: f["t"]),
+    }
+
+
 def avaliar_metas(m, metas=None):
     """[(métrica, valor, meta em texto, ok?)] para o relatório, o painel e a janela."""
     mt = {**METAS_PADRAO, **(metas or {})}
@@ -252,6 +307,13 @@ def avaliar_metas(m, metas=None):
     if r.get("maior_monologo_s") is not None:
         linhas.append(("Maior monólogo", f"{r['maior_monologo_s']} s", f"até {mt['maior_monologo_s']} s",
                        r["maior_monologo_s"] <= mt["maior_monologo_s"]))
+    p = m.get("postura") or {}
+    if p:
+        # metas da nota [[fala-e-apresentacao]]: derrubar o "aí" e trocar "a gente" por sujeito claro
+        linhas.append(('"Aí" a cada 1000 palavras', p["ai_por_1000"], f"até {mt['ai_por_1000']}",
+                       p["ai_por_1000"] <= mt["ai_por_1000"]))
+        linhas.append(('"A gente" a cada 1000 palavras', p["a_gente_por_1000"], f"até {mt['a_gente_por_1000']}",
+                       p["a_gente_por_1000"] <= mt["a_gente_por_1000"]))
     return linhas
 
 
@@ -348,90 +410,6 @@ def _esc(s):
     return (str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
 
 
-def _dashboard(linhas, pasta):
-    """Painel HTML (RYZE, interno) com todas as reuniões + tendência das KPIs."""
-    def bars(vals, fmt, cor):
-        mx = max(vals) if vals else 1
-        mx = mx or 1
-        out = []
-        for v in vals:
-            h = max(4, round(46 * v / mx))
-            out.append(f'<div class="bar" style="height:{h}px;background:{cor}" '
-                       f'title="{fmt(v)}"></div>')
-        return f'<div class="spark">{"".join(out)}</div>'
-
-    share = [r["metrics"]["share_fala"] for r in linhas]
-    conf = [r["metrics"]["conf_por_min"] for r in linhas]
-    ult = linhas[-1]["metrics"] if linhas else {}
-
-    rows = ""
-    for r in linhas:
-        m = r["metrics"]
-        top_mul = ", ".join(f"{k} ({v})" for k, v in list(m["muletas"].items())[:3]) or "—"
-        rows += (f"<tr><td>{_esc(r['data'])}</td><td>{_esc(r['titulo'])}</td>"
-                 f"<td class='n'>{m['dur_min']}</td>"
-                 f"<td class='n'>{m['share_fala']*100:.0f}%</td>"
-                 f"<td class='n'>{m['conf_por_min']}</td>"
-                 f"<td class='n'>{m['muletas_por_1000']}</td>"
-                 f"<td class='mul'>{_esc(top_mul)}</td></tr>")
-
-    return f"""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">
-<title>Raio-X da Fala — RYZE (interno)</title>
-<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
-<style>
-*{{box-sizing:border-box}}
-body{{margin:0;background:#0D0D0D;color:#EBEBEB;font-family:'Plus Jakarta Sans',sans-serif;line-height:1.6}}
-.wrap{{max-width:960px;margin:0 auto;padding:34px 24px 60px}}
-.top{{display:flex;align-items:center;gap:12px;margin-bottom:6px}}
-.top svg{{height:30px}}.top .wm{{font-family:'Space Grotesk';font-weight:700;letter-spacing:4px;font-size:15px}}
-.badge{{margin-left:auto;font-family:'JetBrains Mono';font-size:10px;letter-spacing:1.5px;text-transform:uppercase;
-  color:#FFD666;border:1px solid rgba(255,183,0,.3);padding:4px 10px;border-radius:20px}}
-h1{{font-family:'Space Grotesk';font-weight:700;font-size:28px;letter-spacing:-.5px;margin:14px 0 2px}}
-.sub{{color:#8A8A8A;font-size:13px;margin-bottom:28px}}
-.kpis{{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:26px}}
-.kpi{{background:#171717;border:1px solid #262626;border-radius:14px;padding:18px}}
-.kpi .lb{{font-family:'JetBrains Mono';font-size:9.5px;letter-spacing:1.5px;text-transform:uppercase;color:#CC9200}}
-.kpi .vl{{font-family:'Space Grotesk';font-weight:700;font-size:30px;color:#fff;margin-top:6px}}
-.kpi .spark{{display:flex;align-items:flex-end;gap:3px;height:48px;margin-top:12px}}
-.bar{{flex:1;border-radius:2px;min-width:5px}}
-.kpi .hint{{font-size:11px;color:#6B6B6B;margin-top:8px}}
-table{{width:100%;border-collapse:collapse;font-size:13px;background:#171717;border:1px solid #262626;border-radius:12px;overflow:hidden}}
-thead th{{background:#000;color:#FFB700;font-family:'JetBrains Mono';font-size:9.5px;letter-spacing:1px;text-transform:uppercase;padding:11px 12px;text-align:left}}
-td{{padding:11px 12px;border-bottom:1px solid #222;vertical-align:top;color:#D4D4D4}}
-tr:last-child td{{border-bottom:none}}
-td.n{{font-family:'JetBrains Mono';text-align:right;white-space:nowrap;color:#fff}}
-td.mul{{color:#8A8A8A;font-size:12px}}
-.foot{{color:#525252;font-size:11px;font-family:'JetBrains Mono';margin-top:22px}}
-h2{{font-family:'Space Grotesk';font-size:16px;margin:32px 0 12px}}
-</style></head><body><div class="wrap">
-<div class="top">
-  <svg viewBox="0 0 400 520" xmlns="http://www.w3.org/2000/svg"><path d="M308.484 282.06L244.072 357.593H211L231.18 392H350.77L400 520H244.159L171.652 352.605L177.931 342.661L225 254.736L211.896 226.997L191.439 180.558L159.957 267.483L127.315 354.301L112.868 394.729H139.992L194.254 520H0L200 0L308.484 282.06Z" fill="#FFB700"/></svg>
-  <span class="wm">RYZE</span><span class="badge">Uso interno</span>
-</div>
-<h1>Raio-X da Fala</h1>
-<div class="sub">Como você fala nas reuniões — evolução ao longo do tempo. Dado pessoal, nunca vai ao cliente.</div>
-<div class="kpis">
-  <div class="kpi"><div class="lb">Sua fatia de fala</div><div class="vl">{ult.get('share_fala',0)*100:.0f}%</div>
-    {bars(share, lambda v:f"{v*100:.0f}%", "#FFB700")}<div class="hint">meta: aproximar de 50%</div></div>
-  <div class="kpi"><div class="lb">Confirmações / min</div><div class="vl">{ult.get('conf_por_min',0)}</div>
-    {bars(conf, lambda v:str(v), "#8B5CF6")}<div class="hint">"entendeu? / certo?" — quanto menor, melhor</div></div>
-  <div class="kpi"><div class="lb">Muletas / 1000 palavras</div><div class="vl">{ult.get('muletas_por_1000',0)}</div>
-    <div class="hint">aí, tá, tipo, cara…</div></div>
-  <div class="kpi"><div class="lb">Ritmo (palavras/min)</div><div class="vl">{(ult.get('ritmo') or {}).get('ppm','—')}</div>
-    <div class="hint">maior monólogo: {(ult.get('ritmo') or {}).get('maior_monologo_s','—')} s · interrompeu {(ult.get('ritmo') or {}).get('interrompeu','—')}×</div></div>
-  <div class="kpi"><div class="lb">Entonação (semitons)</div><div class="vl">{(ult.get('voz') or {}).get('entonacao_st','—')}</div>
-    <div class="hint">perto de 1 soa monótono; 2 a 4 é fala viva</div></div>
-  <div class="kpi"><div class="lb">Reuniões monitoradas</div><div class="vl">{len(linhas)}</div>
-    <div class="hint">o painel cresce a cada ata</div></div>
-</div>
-<h2>Reunião a reunião</h2>
-<table><thead><tr><th>Data</th><th>Reunião</th><th>Min</th><th>Sua fala</th><th>Conf/min</th><th>Mul/1k</th><th>Top muletas</th></tr></thead>
-<tbody>{rows}</tbody></table>
-<div class="foot">Gerado localmente · fala-analise/ · não sincronizado · RYZE</div>
-</div></body></html>"""
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Alimenta o segundo cérebro (Sinapse): escreve uma nota AUTO-gerada de Fala no
 # vault a cada reunião → aba Crescimento Pessoal. A narrativa/metas ficam na nota
@@ -466,6 +444,10 @@ def _nota_vault_md(linhas):
         f"**{(ult.get('ritmo') or {}).get('interrompeu', '—')}** vezes",
         (f"- Voz: entonação **{ult['voz']['entonacao_st']} semitons** (perto de 1 = monótono)"
          if ult.get("voz") else "- Voz: sem áudio do microfone nesta reunião"),
+        (f"- Postura: \"aí\" **{ult['postura']['ai_por_1000']}**/1k · \"a gente\" "
+         f"**{ult['postura']['a_gente_por_1000']}**/1k (metas 1 e 2 de [[fala-e-apresentacao]]) · "
+         f"promessa no reflexo **{ult['postura']['promessa_total']}** · certeza absoluta "
+         f"**{ult['postura']['certeza_total']}**" if ult.get("postura") else "- Postura: —"),
         f"- Reuniões monitoradas: **{len(linhas)}**", "",
         "## Reunião a reunião (últimas)",
         "| Data | Tipo | Min | Fala | Conf/min | Mul/1k | Ritmo | Top muletas |",
@@ -493,7 +475,7 @@ def _atualizar_vault(linhas):
 
 
 def processar(segments, titulo, quando, pasta=None, tipo=None, sessao_id=None, vault=True,
-              audio_mic=None, metas=None):
+              audio_mic=None, metas=None, avaliacao_md=None):
     """Analisa, salva relatório .md, atualiza histórico, regenera o painel e
     alimenta o Sinapse. Retorna os caminhos gerados (vault=None se não gravou).
     v2.1: ritmo/turnos/interrupções, blocos de 30 min, voz (se `audio_mic` existir) e metas."""
@@ -501,6 +483,7 @@ def processar(segments, titulo, quando, pasta=None, tipo=None, sessao_id=None, v
     pasta.mkdir(exist_ok=True)
     metrics = analisar(segments)
     metrics["ritmo"] = ritmo_e_turnos(segments)
+    metrics["postura"] = postura(segments)
     metrics["blocos"] = por_bloco(segments) if metrics["dur_min"] >= 45 else []
     try:
         metrics["voz"] = voz(segments, audio_mic) if audio_mic else None
@@ -513,10 +496,45 @@ def processar(segments, titulo, quando, pasta=None, tipo=None, sessao_id=None, v
            "safe": safe, "tipo": tipo, "metrics": metrics}
     linhas = _upsert_historico(reg, pasta)
     md = _relatorio_md(reg, pasta)
-    dash = pasta / "raio-x.html"
-    dash.write_text(_dashboard(linhas, pasta), encoding="utf-8")
+    pagina = _escrever_pagina(reg, pasta, avaliacao_md)
+    dash = _escrever_painel(linhas, pasta)
     nota = _atualizar_vault(linhas) if vault else None
-    return {"md": md, "dashboard": dash, "metrics": metrics, "vault": nota}
+    return {"md": md, "pagina": pagina, "dashboard": dash, "metrics": metrics, "vault": nota}
+
+
+def _arquivo_pagina(reg):
+    return f"{_stamp(reg['data'])}_{reg['safe']}.html"
+
+
+def _escrever_pagina(reg, pasta, avaliacao_md=None):
+    import raio_x_html
+    destino = pasta / _arquivo_pagina(reg)
+    destino.write_text(raio_x_html.pagina_reuniao(reg, avaliacao_md), encoding="utf-8")
+    return destino
+
+
+def _escrever_painel(linhas, pasta):
+    import raio_x_html
+    dash = pasta / "raio-x.html"
+    dash.write_text(raio_x_html.painel(linhas, lambda r: _arquivo_pagina(r) if (pasta / _arquivo_pagina(r)).exists()
+                                       else None), encoding="utf-8")
+    return dash
+
+
+def pagina_da_reuniao(sessao_id, avaliacao_md=None, pasta=None):
+    """Regrava a página de uma reunião já analisada (ex.: quando a avaliação interna fica pronta,
+    a página ganha a negociação e a postura). Devolve o caminho, ou None se não houver Raio-X."""
+    pasta = pathlib.Path(pasta) if pasta else FALA_DIR
+    hist = pasta / "historico.jsonl"
+    if not hist.exists():
+        return None
+    linhas = [json.loads(ln) for ln in hist.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    reg = next((r for r in linhas if r.get("id") == sessao_id), None)
+    if not reg or "safe" not in reg:
+        return None
+    destino = _escrever_pagina(reg, pasta, avaliacao_md)
+    _escrever_painel(linhas, pasta)
+    return destino
 
 
 def reescrever_nota(pasta=None, tipos=None):

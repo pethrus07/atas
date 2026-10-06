@@ -159,4 +159,28 @@ def avaliar(sessao, segs, ata, metricas, cfg, log=print):
     if destino.exists():                           # nunca por cima de uma revisada à mão
         destino = sessao.caminho(f"avaliacao-interna.auto-{time.strftime('%Y%m%d-%H%M%S')}.md")
     destino.write_text(corpo + rodape, encoding="utf-8")
+    escrever_html(sessao, destino)
     return destino, meta
+
+
+def escrever_html(sessao, md_path):
+    """A mesma avaliação em página RYZE escura (v2.2), ao lado do .md."""
+    import raio_x_html
+    import tema as _t
+    md = pathlib.Path(md_path).read_text(encoding="utf-8")
+    titulo = sessao.m.get("titulo") or "Reunião"
+    corpo = (_t.capa(titulo, "Avaliação interna", (sessao.m.get("inicio") or "")[:16].replace("T", " "))
+             + '<section>' + _t.markdown_html(md) + "</section>" + _t.rodape("avaliação interna · uso interno"))
+    destino = pathlib.Path(md_path).with_suffix(".html")
+    destino.write_text(_t.pagina(f"Avaliação interna · {titulo}", corpo, css_extra=raio_x_html._CSS_MD),
+                       encoding="utf-8")
+    return destino
+
+
+def mais_recente(sessao):
+    """A avaliação que vale: a revisada à mão (avaliacao-interna.md) ou a automática mais nova."""
+    feita = sessao.caminho(ARQUIVO)
+    if feita.exists():
+        return feita
+    autos = sorted(sessao.pasta.glob("avaliacao-interna.auto-*.md"))
+    return autos[-1] if autos else None

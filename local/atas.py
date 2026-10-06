@@ -366,9 +366,14 @@ def raio_x(s, cfg=None, log=print):
     segs, _ = _ata_de(s)
     if not segs:
         raise SystemExit("esta sessão não tem transcrição")
+    import avaliar
     mic = s.mic_pcm if s.mic_pcm.exists() else s.caminho("audio") / "mic.opus"
+    av = avaliar.mais_recente(s)                 # a página da reunião traz a postura da avaliação
+    if av and not av.with_suffix(".html").exists():
+        avaliar.escrever_html(s, av)
     r = analise_fala.processar(segs, s.m.get("titulo"), s.m.get("inicio") or "", tipo=s.tipo,
-                               sessao_id=s.id, audio_mic=mic, metas=cfg.get("metas_fala"))
+                               sessao_id=s.id, audio_mic=mic, metas=cfg.get("metas_fala"),
+                               avaliacao_md=av.read_text(encoding="utf-8") if av else None)
     s.etapa("raio_x", "ok", "nota do Sinapse atualizada" if r.get("vault") else "vault não encontrado")
     return r
 
@@ -385,11 +390,11 @@ def c_fala(a):
         print(f"  · Entonação: {m['voz']['entonacao_st']} semitons · volume {m['voz']['volume_db']} dBFS")
     if m.get("blocos"):
         print("  · Ao longo da reunião (mul/1k): " + " → ".join(str(b["muletas_por_1000"]) for b in m["blocos"]))
-    print(f"\nrelatório: {r['md']}\npainel:    {r['dashboard']}")
+    print(f"\npágina: {r['pagina']}\npainel: {r['dashboard']}")
     if not a.sem_abrir:
-        for alvo in (r["dashboard"], r["md"]):
+        for alvo in (r["pagina"],):
             try:
-                os.startfile(str(alvo))          # painel no navegador; .md no preview
+                os.startfile(str(alvo))          # a página da reunião, no navegador
             except (AttributeError, OSError):
                 pass
 

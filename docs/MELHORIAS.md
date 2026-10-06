@@ -19,6 +19,8 @@ Valter, sessão `2026-10-05_2303_alinhamento-valter`), conferida item a item con
 | 9 | Valores, escopo, resumo por tema | ✅ listas auditadas `valores` (V) e `escopo` (S) + `por_tema` | `ata.py`, `render.py` |
 | 10 | Trechos "Palavra Por Palavra" do turbo | ⏳ pendente (investigar) | — |
 | 11 | Raio-X grava no Sinapse sem perguntar | ✅ documentado como a única exceção (regra 7 do /ata) | skill |
+| 12 | Tema escuro RYZE em tudo (ata, entregável, Raio-X, avaliação) | ✅ v2.2 | `tema.py` |
+| 13 | Raio-X com postura, frases para revisar e página por reunião | ✅ v2.2 | `analise_fala.postura`, `raio_x_html.py` |
 | — | Marcar trechos fora de pauta | ⏳ parcial: o prompt tira de resumo e itens; falta marcar na transcrição interna | — |
 
 Medido na reunião de 05/10 com a v2.1: ritmo **193 pal/min** (meta 130–180), muletas
