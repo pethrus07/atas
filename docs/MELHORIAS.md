@@ -4,7 +4,7 @@ Backlog do sistema. Cada item diz o que aconteceu, onde, e o que precisa mudar. 
 de prioridade. Fonte: a primeira reunião longa real da v2 (05/10/2026, 3h09, alinhamento com o
 Valter, sessão `2026-10-05_2303_alinhamento-valter`), conferida item a item contra a transcrição.
 
-## Status em 06/10/2026 · branch `v2.1-analises`
+## Status em 06/10/2026 · tudo no `main` (`21d5bdd` v2.1, `51c602c` v2.2, `6ba25d1` voz)
 
 | # | Item | Estado | Onde |
 |---|---|---|---|
@@ -21,6 +21,8 @@ Valter, sessão `2026-10-05_2303_alinhamento-valter`), conferida item a item con
 | 11 | Raio-X grava no Sinapse sem perguntar | ✅ documentado como a única exceção (regra 7 do /ata) | skill |
 | 12 | Tema escuro RYZE em tudo (ata, entregável, Raio-X, avaliação) | ✅ v2.2 | `tema.py` |
 | 13 | Raio-X com postura, frases para revisar e página por reunião | ✅ v2.2 | `analise_fala.postura`, `raio_x_html.py` |
+| 14 | Voz com leitura: o que é, faixas, zona, o que fazer; evolução por bloco de 30 min ("st, volume e tom não significam nada pra mim") | ✅ `6ba25d1` | `analise_fala.leitura_voz`, `raio_x_html._secao_voz`, `tests/test_voz.py` |
+| — | Worker v2 no ar (sem ele, nenhuma ata é publicada; a de 05/10 está parada) | ⏳ o login do wrangler virou a conta pessoal | `worker/` |
 | — | Marcar trechos fora de pauta | ⏳ parcial: o prompt tira de resumo e itens; falta marcar na transcrição interna | — |
 
 Medido na reunião de 05/10 com a v2.1: ritmo **193 pal/min** (meta 130–180), muletas
@@ -28,13 +30,12 @@ Medido na reunião de 05/10 com a v2.1: ritmo **193 pal/min** (meta 130–180), 
 
 ## 🔴 Problemas (corrigir antes do próximo uso com cliente)
 
-### 1. Editar a ata publicava a página do cliente sozinho · **corrigido, falta commit**
+### 1. Editar a ata publicava a página do cliente sozinho · ✅ **corrigido e com teste (v2.1)**
 `atas.py render`, `falantes` e `confirmar` chamavam `pipeline.reaplicar(publicar_=not sem_publicar)`,
 ou seja, `True`, que é **pedido explícito** de publicação. Em 06/10 o `render` tentou publicar a
 ata do Valter; só não saiu porque o Worker v2 não está no ar (HTTP 404). Corrigido em
 `local/atas.py::_reaplicar` para `False if sem_publicar else None` (só atualiza a página se ela
-**já** estiver no ar), igual ao `processar`. **Falta:** teste de regressão que garanta que
-`render`/`falantes`/`confirmar` de uma ata não publicada não chamam `publicar()`.
+**já** estiver no ar), igual ao `processar`. O teste de regressão está em `tests/test_v21.py`.
 
 ### 2. O entregável do cliente leva a transcrição inteira
 `render.html(cliente=True)` inclui a transcrição completa (`<details class="transc">`). A ata de
