@@ -22,6 +22,7 @@ Valter, sessão `2026-10-05_2303_alinhamento-valter`), conferida item a item con
 | 12 | Tema escuro RYZE em tudo (ata, entregável, Raio-X, avaliação) | ✅ v2.2 | `tema.py` |
 | 13 | Raio-X com postura, frases para revisar e página por reunião | ✅ v2.2 | `analise_fala.postura`, `raio_x_html.py` |
 | 14 | Voz com leitura: o que é, faixas, zona, o que fazer; evolução por bloco de 30 min ("st, volume e tom não significam nada pra mim") | ✅ `6ba25d1` | `analise_fala.leitura_voz`, `raio_x_html._secao_voz`, `tests/test_voz.py` |
+| 15 | Raio-X calibrado com fonte: muleta pura × marcador, "tá" verbo fora, confirmação só com "?", "aí" em degraus, "a gente" sem meta, tomou a vez × apoio, fatia por tipo, sílabas/s, paciência, perguntas abertas, compromisso com dono e prazo, limiar de 1.000 palavras, mediana das últimas 5, `fala --recalcular` | ✅ 14/10 | `analise_fala.py` (v3), `ARQUITETURA.md` §17, `tests/test_raio_x_calibrado.py` |
 | — | Worker v2 no ar (sem ele, nenhuma ata é publicada; a de 05/10 está parada) | ⏳ o login do wrangler virou a conta pessoal | `worker/` |
 | — | Marcar trechos fora de pauta | ⏳ parcial: o prompt tira de resumo e itens; falta marcar na transcrição interna | — |
 
@@ -117,3 +118,12 @@ Deixar escrito na skill que a nota `fala-raio-x.md` é a **única** exceção.
 ## Já anotados em outros lugares
 - Worker v2 não deployado (login do wrangler trocado): `ARQUITETURA.md` §14.
 - Ao vivo nunca testado em reunião real: `ARQUITETURA.md` §13.
+
+## 15. Raio-X calibrado (14/10/2026) · ✅
+Pesquisa de referências (ritmo de João Pessoa, Gong, Abralin, CoDAS) mostrou que parte das metas
+media a régua errada: em 13/10 as "muletas" eram 77,2/1k, mas boa parte era "tá" verbo e marcador;
+"a gente" é pronome padrão; o "aí" ≤8 era inalcançável; reunião de 600 palavras era julgada igual a
+uma de 13 mil. Regras, fontes e limites em `ARQUITETURA.md` §17. Recalcular o histórico real:
+`atas.py fala --recalcular` (não escreve no vault).
+**Pendente:** a janela não pergunta o `formato` (descoberta/demo/alinhamento); por ora só entra
+editando o `sessao.json`.

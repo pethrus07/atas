@@ -90,7 +90,7 @@ atas/
 │   ├── wrangler.toml          conta FIXADA, D1, cron, ambiente homolog
 │   ├── package.json + test/   só para os testes (Miniflare); o deploy não tem build
 ├── claude/skills/ata/         a skill /ata (junction em ~/.claude/skills/ata)
-├── tests/                     pytest: 53 testes, inclusive fumaça e gravação reais (-m lento)
+├── tests/                     pytest: 91 testes (3 lentos: fumaça e gravação reais, -m lento)
 ├── atas-salvas/               FORA DO GIT — uma pasta por reunião (§8)
 ├── fala-analise/              FORA DO GIT — histórico e painel do Raio-X
 └── docs/                      este arquivo + BRIEFING-V2.md
@@ -408,7 +408,7 @@ disputaria processador com a chamada). Não substitui a transcrição final.
 | /ata, índice (`buscar`), log de decisões | **prontos** | `claude/skills/ata`, `atas.py` |
 | Raio-X sem título no Sinapse | **pronto**; nota regravada | `analise_fala.py` |
 | 27 atas antigas | **importadas** como sessões `legado`, tipo/projeto **inferidos**; sem áudio; ainda não estruturadas | `legado.py` |
-| Testes | 53 em Python (2 com os dispositivos reais) + 10 no Worker | `tests/`, `worker/test/` |
+| Testes | 91 em Python em 14/10 (3 lentos, 2 com os dispositivos reais) + 10 no Worker | `tests/`, `worker/test/` |
 | Ao vivo | MVP pronto, **não testado numa reunião real** | `ao_vivo.py` |
 | Domínio próprio | adiado | README da v1 / memória |
 
@@ -519,3 +519,62 @@ em `docs/MELHORIAS.md`. Em uma linha cada:
   entonação que cai ≥0,5 = fala ficando monótona. O nível da gravação é do **microfone**, não da voz.
   As faixas são referência prática de fala em reunião, não diagnóstico. A mesma leitura vai ao
   relatório `.md`, ao `atas.py fala`, à janela, à nota do Sinapse e ao prompt da avaliação.
+
+## 17 · Raio-X calibrado (14/10/2026)
+
+O Raio-X media coisas certas com régua errada: "tá" verbo contava como muleta, "tá," contava como
+pedido de confirmação, "a gente" (o pronome padrão do pt-BR falado) era meta, a meta do "aí" (≤8)
+era inalcançável e uma reunião de 600 palavras era julgada como uma de 13 mil. A calibração mantém
+o que já existia e muda a leitura. Tudo em `local/analise_fala.py` (linhas novas marcadas "v3").
+
+**Regras.**
+
+| Medida | Como mede agora | Faixa / meta | Fonte |
+|---|---|---|---|
+| Muleta pura | aí, tipo, cara, pô, mano, enfim, basicamente, literalmente, simplesmente, digamos; "tipo assim" conta 1; "esse tipo de"/"o cara" (depois de determinante ou antes de "de") não contam | mediana das últimas 5 reuniões com ≥1.000 palavras, −20% | dados do Pedro; Castro 2014 (CoDAS) para o contexto |
+| Marcador de discurso | então, tá, assim, exatamente, né, beleza, olha, sabe, "tá ligado"… sem "?" | só informa | — |
+| "tá" verbo | depois de sujeito/negação/advérbio ("isso tá", "não tá") ou seguido de palavra na mesma oração ("tá funcionando", "tá bom") → não conta | — | heurística (`classificar_palavras`) |
+| "Aí" | por mil palavras | degraus pelos dados: ≤20; se a mediana das últimas 5 ficar ≤20, ≤15 | — |
+| "A gente" | continua contado, na postura ("eu" × "a gente") | **sem meta** | Omena 2003 |
+| Confirmação | só a tag com "?" ("entendeu?", "tá?", "né?", "tá ligado?") | ≤0,5/min | meta própria |
+| Tomou a vez × apoio | sobreposição em que o outro para em até 2 s e você fala ≥2 s × fala ≤1 s ou ≤2 palavras | tomou a vez ≤1 a cada 10 min (cliente; heurística inicial) | — |
+| Fatia de fala | por tipo: descoberta 35–50%; demo/alinhamento 45–60%; 3+ pessoas 0,75×–1,5× de 1/N; cliente sem formato 35–55%; Parresia/carreira/pessoal só informa | idem | Gong 2016 e 2025 |
+| Sílabas/s (elocução) e articulação | núcleos vocálicos por regex com ajuste de ditongo (`silabas`); elocução no tempo do turno, articulação só no tempo das falas | norma 4,2 ± 0,7 sílabas/s e 125–134 ppm (só informa; a meta de ppm segue 130–180) | RBCS/UFPB 2019 |
+| Paciência / atropelo | tempo médio de resposta; % de respostas < 0,3 s | 0,6–1,0 s; atropelo só informa | Gong |
+| Perguntas abertas | `perguntas_reais` com como/por que/o que/qual/quanto/quando/onde/me conta/me explica… | 11–16 abertas, só em `formato: descoberta` | Gong 2025 |
+| Compromisso com dono e prazo | futuro + verbo de entrega ("vou mandar", "a gente vai revisar") ou ação na 1ª pessoa ("eu te mando", "fica pronto"); prazo por `ata.expressao_de_prazo` (a mesma detecção da auditoria) | % com dono e prazo, só informa; as que faltam aparecem com timestamp | — |
+| Entonação | zona de 2,2–4,5 st renomeada de "viva" para **"típica"** | apresentação ≥3 st | Arantes (Abralin) |
+| Volume / dBFS | sem mudança | "referência prática" | — |
+
+**Método.** Meta só é julgada com **≥1.000 palavras do Pedro**; abaixo disso a medida aparece com
+"amostra pequena, só informativo" (`ok = None` na tupla de `metas`). Cada medida tem uma **leitura**
+(`ler_metricas` → `metrics["leitura"]`): o que é, a faixa e a fonte, onde ele ficou, a **mediana das
+últimas 5 reuniões** (anteriores a esta, com ≥1.000 palavras) e o que fazer. A página, o `.md`, o
+`atas.py fala`, a janela, a nota do Sinapse e o prompt da avaliação leem daí.
+
+**Tipo e formato.** A fatia usa `tipo` e `participantes` do `sessao.json`. O campo opcional
+`formato` (`descoberta` · `demo` · `alinhamento`) também é lido de lá, se existir; a janela não
+pergunta. Sem ele, cliente usa 35–55% e a leitura diz por quê.
+
+**Compatibilidade.** O `historico.jsonl` antigo continua sendo lido. `metrics.versao = 3` marca as
+linhas novas. Nas antigas, a muleta pura sai da contagem por palavra (aproximada, marcada com `*`
+na nota e "(aprox.)" no recálculo), o "aí" sai do mesmo jeito (exato) e a confirmação antiga
+(que contava "tá,") **não entra** na mediana. `muletas_por_1000` e `muletas` continuam existindo
+(puras + marcadores) e `interrompeu` guarda o total de sobreposições.
+
+**Recálculo.** `atas.py fala --recalcular [--saida PASTA]` refaz o Raio-X das reuniões não legadas
+com as regras atuais, **sem escrever no vault** e sem tocar na pasta da reunião; a voz vem da linha
+antiga. Com `--saida` noutra pasta, copia o histórico para lá e não mexe no de verdade. Imprime
+antes × depois.
+
+**Limites conhecidos das heurísticas.**
+- "tá" verbo depende da vírgula do Whisper: sem pontuação, "tá" + palavra vira verbo; "tá louco"
+  e "aí que tá" contam como verbo (expressão, não muleta).
+- Sílabas: hiato com i/u átono ("dia", "rua") conta 1; número em algarismo não conta.
+- Pergunta aberta: "você viu o que eu mandei?" conta como aberta; "e o preço?" como fechada.
+- Compromisso: só acha o que segue os padrões; "vamos cadastrar uma máquina" numa demo passa
+  como compromisso; frase cortada ("Ou você vai...") fica fora; prazo só nas falas do Pedro.
+- Tomou a vez e atropelo dependem dos tempos do Whisper (±0,2 s); o atropelo alto (40–50%) das
+  reuniões de outubro pode ser em parte isso.
+- Fatia com 3+ pessoas: a faixa 0,75×–1,5× de 1/N é heurística, sem fonte.
+- A mediana das últimas 5 mistura linhas da v1/v2 até haver 5 reuniões novas.
