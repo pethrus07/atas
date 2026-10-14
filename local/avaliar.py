@@ -40,14 +40,27 @@ def _fala(m):
     """O Raio-X em texto curto, para o prompt (as metas e o cansaço)."""
     if not m:
         return "Raio-X da Fala indisponível."
-    L = [f"- {n}: {v} (meta {meta}) {'ok' if ok else 'FORA DA META'}" for n, v, meta, ok in m.get("metas", [])]
+    L = [f"- {n}: {v} (meta {meta}) "
+         f"{'só informativo (amostra < 1.000 palavras)' if ok is None else 'ok' if ok else 'FORA DA META'}"
+         for n, v, meta, ok in m.get("metas", [])]
     r = m.get("ritmo") or {}
-    if r:
+    if r and "tomou_vez" in r:
+        L.append(f"- Tomou a vez {r.get('tomou_vez')}× (apoio {r.get('apoio')}×), foi interrompido "
+                 f"{r.get('foi_interrompido')}×; maior monólogo {r.get('maior_monologo_s')} s; perguntas "
+                 f"{r.get('perguntas_abertas')} abertas e {r.get('perguntas_fechadas')} de sim/não; "
+                 f"{r.get('silabas_por_s')} sílabas/s (norma de João Pessoa 4,2 ± 0,7)")
+    elif r:
         L.append(f"- Interrompeu {r.get('interrompeu')}×, foi interrompido {r.get('foi_interrompido')}×; "
                  f"maior monólogo {r.get('maior_monologo_s')} s; perguntas reais {r.get('perguntas_reais')}")
+    cp = m.get("compromissos") or {}
+    if cp.get("total"):
+        L.append(f"- Compromissos com dono e prazo: {cp['completos']} de {cp['total']}")
     if m.get("confirmacoes"):
         L.append("- Confirmações: " + ", ".join(f"{k}? {v}" for k, v in m["confirmacoes"].items()))
-    if m.get("muletas"):
+    if m.get("muletas_puras") is not None:
+        L.append("- Muletas puras: " + (", ".join(f"{k} {v}" for k, v in list(m["muletas_puras"].items())[:6]) or "—")
+                 + " · marcadores: " + (", ".join(f"{k} {v}" for k, v in list(m["marcadores"].items())[:6]) or "—"))
+    elif m.get("muletas"):
         L.append("- Muletas: " + ", ".join(f"{k} {v}" for k, v in list(m["muletas"].items())[:8]))
     if m.get("blocos"):
         L.append("- Muletas/1k por bloco de 30 min: " + " → ".join(str(b["muletas_por_1000"]) for b in m["blocos"]))

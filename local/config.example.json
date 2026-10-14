@@ -31,6 +31,8 @@
   "projetos_dir": null,
   "memoria_dir": null,
   "negociacao": {"piso_hora": 70},
-  "metas_fala": {"share_fala": [0.35, 0.55], "conf_por_min": 0.5, "muletas_por_1000": 30,
-                 "ppm": [130, 180], "maior_monologo_s": 120}
+  "_v3_fala": "Raio-X calibrado (14/10/2026): a meta da muleta pura e o degrau do 'aí' saem do histórico; ver docs/ARQUITETURA.md §17",
+  "metas_fala": {"share_fala": [0.35, 0.55], "conf_por_min": 0.5, "ppm": [130, 180], "maior_monologo_s": 120,
+                 "ai_por_1000": [20, 15], "muleta_pura_reducao": 0.2, "resposta_s": [0.6, 1.0],
+                 "tomou_vez_por_10min": 1, "perguntas_abertas": [11, 16], "min_palavras": 1000}
 }

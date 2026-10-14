@@ -438,11 +438,16 @@ class App(tk.Tk):
         caixa = ttk.Frame(f)
         caixa.pack(fill="x", pady=(0, _p(14)))
         ttk.Label(caixa, text="Sua fala nesta reunião", style="Sub.TLabel").pack(anchor="w")
-        fora = [x for x in m["metas"] if not x[3]]
+        # v3 (14/10/2026): ok None = amostra pequena (< 1.000 palavras suas): número sem julgamento
+        fora = [x for x in m["metas"] if x[3] is False]
+        pequena = any(x[3] is None for x in m["metas"])
         for nome, val, meta, _ok in fora[:3]:
             ttk.Label(caixa, text=f"!  {nome}: {val} (meta {meta})", style="Alerta.TLabel",
                       wraplength=_p(370)).pack(anchor="w")
-        if not fora:
+        if pequena:
+            ttk.Label(caixa, text=f"·  amostra pequena ({m.get('palavras_voce', 0)} palavras suas, menos de 1.000): "
+                                  "os números só informam", style="Sub.TLabel", wraplength=_p(370)).pack(anchor="w")
+        elif not fora:
             ttk.Label(caixa, text="✓  todas as metas batidas", style="Sub.TLabel").pack(anchor="w")
         if m.get("voz"):
             itens = {it["chave"]: it for it in analise_fala.leitura_voz(m["voz"])[0]}

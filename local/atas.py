@@ -21,6 +21,7 @@ Atas — linha de comando. É a interface do /ata (Claude) e o plano B da janela
     python atas.py abrir <id> [arquivo]   Explorer na pasta, com o arquivo selecionado
     python atas.py ao-vivo                caminho da transcrição ao vivo da gravação em curso
     python atas.py fala <id|ultima>       Raio-X da Fala: ritmo, turnos, cansaço, voz e metas [--sem-abrir]
+    python atas.py fala --recalcular [--saida PASTA]   refaz o Raio-X das reuniões com as regras atuais (sem vault)
     python atas.py calibrar <id>          diarização com vários limiares no áudio guardado
     python atas.py importar-legado        traz as atas soltas de antes da v2
     python atas.py limpar-audio           aplica a retenção do áudio
@@ -373,19 +374,39 @@ def raio_x(s, cfg=None, log=print):
         avaliar.escrever_html(s, av)
     r = analise_fala.processar(segs, s.m.get("titulo"), s.m.get("inicio") or "", tipo=s.tipo,
                                sessao_id=s.id, audio_mic=mic, metas=cfg.get("metas_fala"),
-                               avaliacao_md=av.read_text(encoding="utf-8") if av else None)
+                               avaliacao_md=av.read_text(encoding="utf-8") if av else None,
+                               participantes=s.participantes_remotos(), formato=s.m.get("formato"))
     s.etapa("raio_x", "ok", "nota do Sinapse atualizada" if r.get("vault") else "vault não encontrado")
     return r
 
 
+def _imprimir_leitura(m):
+    """Cada medida com a leitura: onde você ficou, a faixa, a mediana das últimas 5 e o que fazer."""
+    marca = {"ok": "✓", "fora": "!", "info": "·", "pequena": "·"}
+    if any(it["status"] == "pequena" for it in m.get("leitura") or []):
+        print(f"  (amostra pequena: {m.get('palavras_voce')} palavras suas, menos de 1.000 — nenhuma meta julgada)")
+    for it in m.get("leitura") or []:
+        print(f"  {marca[it['status']]} {it['nome']}: {it['valor_txt']} — faixa {it['faixa']}")
+        print(f"      {it['onde']}. {it['mediana_txt'][:1].upper() + it['mediana_txt'][1:]}.")
+        if it["status"] == "fora" and it["dica"]:
+            print(f"      O que fazer: {it['dica']}")
+
+
 def c_fala(a):
-    """O Raio-X da Fala de uma reunião: imprime as metas e abre o relatório e o painel."""
+    """O Raio-X da Fala de uma reunião: imprime a leitura das medidas e abre a página."""
+    if a.recalcular:
+        return c_fala_recalcular(a)
+    if not a.id:
+        raise SystemExit("informe a reunião (id ou ultima) ou use --recalcular")
     s = achar(a.id)
     r = raio_x(s)
     m = r["metrics"]
     print(f"Raio-X da Fala · {s.m.get('titulo')} · {m['dur_min']} min")
-    for nome, val, meta, ok in m["metas"]:
-        print(f"  {'✓' if ok else '!'} {nome}: {val} (meta {meta})")
+    if m.get("leitura"):
+        _imprimir_leitura(m)
+    else:
+        for nome, val, meta, ok in m["metas"]:
+            print(f"  {'·' if ok is None else '✓' if ok else '!'} {nome}: {val} (meta {meta})")
     if m.get("voz"):
         import analise_fala
         itens, evolucao = analise_fala.leitura_voz(m["voz"])
@@ -395,7 +416,8 @@ def c_fala(a):
         for t in evolucao:
             print(f"  · {t}")
     if m.get("blocos"):
-        print("  · Ao longo da reunião (mul/1k): " + " → ".join(str(b["muletas_por_1000"]) for b in m["blocos"]))
+        print("  · Ao longo da reunião (muleta pura/1k): "
+              + " → ".join(str(b.get("muleta_pura_por_1000", b["muletas_por_1000"])) for b in m["blocos"]))
     print(f"\npágina: {r['pagina']}\npainel: {r['dashboard']}")
     if not a.sem_abrir:
         for alvo in (r["pagina"],):
@@ -403,6 +425,78 @@ def c_fala(a):
                 os.startfile(str(alvo))          # a página da reunião, no navegador
             except (AttributeError, OSError):
                 pass
+
+
+def _resumo_fala(m):
+    """As medidas do Raio-X numa linha cada, lendo linha antiga (v2) e nova (v3): antes × depois."""
+    import analise_fala as af
+    r, p = m.get("ritmo") or {}, m.get("postura") or {}
+    pura, aprox = af.valor_de(m, "muleta_pura_por_1000")
+    fatia = next((it["faixa"].split(" (")[0] for it in m.get("leitura") or [] if it["chave"] == "share_fala"),
+                 "35% a 55%")
+    metas = m.get("metas", [])
+    return {
+        "palavras suas": m.get("palavras_voce"),
+        "fatia (faixa)": f"{m.get('share_fala', 0) * 100:.0f}% ({fatia})",
+        "muletas/1k (todas)": m.get("muletas_por_1000"),
+        "muleta pura/1k": f"{af._br(pura)}{' (aprox.)' if aprox else ''}",
+        "marcador/1k": m.get("marcador_por_1000", "—"),
+        "aí/1k": af._br(af.valor_de(m, "ai_por_1000")[0]),
+        "a gente/1k": p.get("a_gente_por_1000", "—"),
+        "confirmações/min": m.get("conf_por_min"),
+        "tomou a vez / apoio (sobrepos.)": (f"{r.get('tomou_vez')} / {r.get('apoio')} ({r.get('interrompeu')})"
+                                            if "tomou_vez" in r else f"— ({r.get('interrompeu', '—')})"),
+        "ppm": r.get("ppm", "—"),
+        "sílabas/s · articulação": (f"{r.get('silabas_por_s')} · {r.get('articulacao_sil_s')}"
+                                    if "silabas_por_s" in r else "—"),
+        "resposta s · atropelo": (f"{r.get('resposta_media_s')} · {r.get('atropelo_pct')}%"
+                                  if "atropelo_pct" in r else f"{r.get('resposta_media_s', '—')} · —"),
+        "perguntas abertas / sim-não": (f"{r.get('perguntas_abertas')} / {r.get('perguntas_fechadas')}"
+                                        if "perguntas_abertas" in r else f"{r.get('perguntas_reais', '—')} (total)"),
+        "compromisso dono+prazo": (f"{m['compromissos']['completos']} de {m['compromissos']['total']}"
+                                   if m.get("compromissos") else "—"),
+        "metas batidas": (f"{sum(1 for x in metas if x[3] is True)} de {sum(1 for x in metas if x[3] is not None)}"
+                          + (" (amostra pequena)" if any(x[3] is None for x in metas) else "")),
+    }
+
+
+def c_fala_recalcular(a):
+    """Reprocessa as reuniões já analisadas com as regras atuais do Raio-X, SEM tocar no vault do
+    Sinapse: regrava só o histórico e as páginas em --saida (padrão: fala-analise/). Com --saida
+    noutra pasta, copia o histórico para lá antes e não mexe no de verdade. A voz não é medida de
+    novo (as regras dela não mudaram): vem da linha antiga. Reuniões legadas (importadas da v1, sem
+    tempos confiáveis) ficam como estão. Não grava nada na pasta da reunião. Imprime antes × depois."""
+    import shutil
+    import analise_fala as af
+    import avaliar
+    import config as _config
+    cfg = _config.carregar()
+    saida = pathlib.Path(a.saida).resolve() if a.saida else af.FALA_DIR.resolve()
+    saida.mkdir(parents=True, exist_ok=True)
+    antes = {r.get("id"): r for r in af.ler_historico(af.FALA_DIR)}
+    if saida != af.FALA_DIR.resolve() and (af.FALA_DIR / "historico.jsonl").exists():
+        shutil.copyfile(af.FALA_DIR / "historico.jsonl", saida / "historico.jsonl")
+    alvo = [s for s in _sessao.listar() if not s.m.get("legado") and s.caminho("transcricao.json").exists()]
+    if a.id:
+        alvo = [s for s in alvo if a.id in s.id]
+    for s in alvo:
+        segs, _ = _ata_de(s)
+        if not segs:
+            continue
+        velho = antes.get(s.id)
+        av = avaliar.mais_recente(s)
+        voz_antiga = ((velho or {}).get("metrics") or {}).get("voz")
+        r = af.processar(segs, s.m.get("titulo"), s.m.get("inicio") or "", pasta=saida, tipo=s.tipo,
+                         sessao_id=s.id, vault=False, metas=cfg.get("metas_fala"),
+                         avaliacao_md=av.read_text(encoding="utf-8") if av else None,
+                         participantes=s.participantes_remotos(), formato=s.m.get("formato"),
+                         voz_pronta=voz_antiga if voz_antiga is not None else {})
+        print(f"\n{s.id}  ({s.tipo})")
+        novo = _resumo_fala(r["metrics"])
+        velho_r = _resumo_fala(velho["metrics"]) if velho else {}
+        for k, v in novo.items():
+            print(f"  {k:<32} {str(velho_r.get(k, '—')):<34} → {v}")
+    print(f"\nhistórico e páginas em: {saida} (o vault do Sinapse não foi tocado)")
 
 
 def c_ao_vivo(a):
@@ -548,8 +642,11 @@ def main(argv=None):
     p.set_defaults(fn=c_abrir)
     sub.add_parser("ao-vivo").set_defaults(fn=c_ao_vivo)
     p = sub.add_parser("fala", help="Raio-X da Fala da reunião (ritmo, turnos, cansaço, voz, metas)")
-    p.add_argument("id")
+    p.add_argument("id", nargs="?")
     p.add_argument("--sem-abrir", action="store_true", help="só imprime, não abre o painel")
+    p.add_argument("--recalcular", action="store_true",
+                   help="reprocessa as reuniões antigas com as regras atuais (não escreve no vault)")
+    p.add_argument("--saida", help="com --recalcular: pasta do histórico e das páginas (padrão: fala-analise/)")
     p.set_defaults(fn=c_fala)
     p = sub.add_parser("calibrar")
     p.add_argument("id")

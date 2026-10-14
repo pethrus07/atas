@@ -294,6 +294,8 @@ def processar(s, cfg=None, log=print, forcar=(), estruturar=None, publicar_=None
                 r = analise_fala.processar(segs, s.m.get("titulo"), s.m.get("inicio") or "",
                                            tipo=s.tipo, sessao_id=s.id, audio_mic=mic,
                                            metas=cfg.get("metas_fala"),
+                                           participantes=s.participantes_remotos(),
+                                           formato=s.m.get("formato"),
                                            avaliacao_md=av.read_text(encoding="utf-8") if av else None)
                 rx["m"] = r.get("metrics")
                 s.etapa("raio_x", "ok", "nota do Sinapse atualizada" if r.get("vault")
