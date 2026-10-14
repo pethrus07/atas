@@ -1186,7 +1186,7 @@ def _nota_vault_md(linhas):
     tab = "\n".join(_row(r) for r in linhas[-8:])
     return "\n".join([
         "---", "tipo: nota", "area: crescimento",
-        "tags: [comunicacao, fala, raio-x, auto-gerado]", "status: em-progresso",
+        "tags: [comunicacao, fala, raio-x, auto-gerado]", "status: ativo",
         f"atualizado: {linhas[-1]['data'] if linhas else ''}", "---", "",
         "# 📈 Raio-X da Fala (auto)", "",
         "> ⚙️ **Nota auto-gerada** pelo sistema [[atas]] a cada reunião — não editar à mão. "
