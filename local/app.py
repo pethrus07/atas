@@ -135,8 +135,14 @@ class App(tk.Tk):
         st.configure("Primario.TButton", font=(base, 11, "bold"), padding=(_p(16), _p(10)))
         st.configure("TButton", font=(base, 10), padding=(_p(10), _p(6)))
         st.configure("Link.TButton", font=(base, 9), padding=(0, _p(2)))
+        st.configure("Valor.TLabel", font=(base, 12, "bold"))
+        st.configure("ValorAlerta.TLabel", font=(base, 12, "bold"), foreground=VERMELHO)
+        st.configure("Texto.TLabel", font=(base, 10))
+        st.configure("Link.TLabel", font=(base, 10, "underline"), foreground=CINZA)
         self.q = queue.Queue()
         self.s = self.g = self.av = None
+        self.gt = None                  # gravador do treino (separado: parar um treino nunca gera ata)
+        self.analisando_treino = False
         self.processando = False
         self.dispensadas = set()
         self.tela = None
@@ -166,6 +172,13 @@ class App(tk.Tk):
         self.after(100, self._drenar)
 
     def _fechar(self):
+        if self.gt is not None:
+            if messagebox.askyesno("Atas", "Parar o treino e ver o retorno?"):
+                self.treino_parar()
+            return
+        if self.analisando_treino and not messagebox.askyesno(
+                "Atas", "O treino ainda está sendo analisado. Fechar mesmo assim?"):
+            return
         if self.g is not None:
             if messagebox.askyesno("Atas", "Parar a gravação e gerar a ata?\n\n"
                                    "(O áudio até aqui já está salvo.)"):
@@ -177,10 +190,17 @@ class App(tk.Tk):
             return
         self.destroy()
 
-    def _recolhivel(self, pai, rotulo, resumo_txt):
+    def _link(self, pai, texto, comando):
+        """Texto clicável, sem borda (regra do Pedro: borda só quando comunica estado)."""
+        lb = ttk.Label(pai, text=texto, style="Link.TLabel", cursor="hand2")
+        lb.bind("<Button-1>", lambda _e: comando())
+        lb.invoke = comando                  # as fotos de conferência da janela clicam por aqui
+        return lb
+
+    def _recolhivel(self, pai, rotulo, resumo_txt, link=False):
         """Botão 'rótulo' + linha de resumo; devolve o frame que abre/fecha."""
         corpo = ttk.Frame(pai)
-        botao = ttk.Button(pai, text=rotulo, style="Link.TButton")
+        botao = self._link(pai, rotulo, lambda: None) if link else ttk.Button(pai, text=rotulo, style="Link.TButton")
         botao.pack(anchor="w")
         resumo = ttk.Label(pai, text=resumo_txt, style="Sub.TLabel", wraplength=_p(370))
         resumo.pack(anchor="w")
@@ -192,7 +212,11 @@ class App(tk.Tk):
                 corpo.pack(fill="x", after=resumo, pady=(_p(8), 0))
             else:
                 corpo.pack_forget()
-        botao.configure(command=alternar)
+        if link:
+            botao.bind("<Button-1>", lambda _e: alternar())
+            botao.invoke = alternar
+        else:
+            botao.configure(command=alternar)
         return corpo, resumo
 
     # ── 1 · nova reunião ───────────────────────────────────────────────────
@@ -215,7 +239,11 @@ class App(tk.Tk):
                        command=lambda: (self.dispensadas.add(o.id), self.inicio())
                        ).pack(side="left", padx=(_p(12), 0))
 
-        ttk.Label(f, text="Nova reunião", style="T.TLabel").pack(anchor="w", pady=(0, _p(20)))
+        cab = ttk.Frame(f)
+        cab.pack(fill="x", pady=(0, _p(20)))
+        ttk.Label(cab, text="Nova reunião", style="T.TLabel").pack(side="left")
+        # modo treino (14/10/2026): um acesso discreto, à direita do título; não mexe no fluxo da reunião
+        self._link(cab, "Treinar", self.treino_inicio).pack(side="right")
 
         ttk.Label(f, text="Título", style="Campo.TLabel").pack(anchor="w")
         self.v_titulo = tk.StringVar()
@@ -558,6 +586,252 @@ class App(tk.Tk):
         linha.pack(fill="x", pady=(_p(10), 0))
         ttk.Button(linha, text="Abrir a pasta", style="Link.TButton", command=pasta).pack(side="left")
         ttk.Button(linha, text="Nova reunião", style="Link.TButton", command=self.inicio).pack(side="right")
+
+    # ── modo treino (14/10/2026): Treino → Treinando → Seu treino ──────────
+    # Ensaio sozinho, só o microfone; o resultado fica fora do Raio-X das reuniões (treino.py).
+    def _campo(self, f, rotulo, topo=0):
+        ttk.Label(f, text=rotulo, style="Campo.TLabel").pack(anchor="w", pady=(_p(topo), 0))
+
+    def treino_inicio(self):
+        import treino as _tr
+        f = self._limpar()
+        self.title("Treino — Atas")
+        cab = ttk.Frame(f)
+        cab.pack(fill="x")
+        ttk.Label(cab, text="Treino", style="T.TLabel").pack(side="left")
+        self._link(cab, "Reuniões", self.inicio).pack(side="right")
+        ttk.Label(f, text="Você fala sozinho. Fica fora do Raio-X das reuniões.", style="Sub.TLabel",
+                  wraplength=_p(370)).pack(anchor="w", pady=(_p(2), _p(20)))
+
+        self._campo(f, "Tipo")
+        self.v_ttipo = tk.StringVar(value=getattr(self, "_ult_ttipo", "reuniao"))
+        linha = ttk.Frame(f)
+        linha.pack(fill="x", pady=(_p(6), _p(20)))
+        for k, rot in _tr.TIPOS_TREINO.items():
+            ttk.Radiobutton(linha, text=rot, value=k, variable=self.v_ttipo).pack(side="left", padx=(0, _p(14)))
+
+        linha = ttk.Frame(f)
+        linha.pack(fill="x")
+        ttk.Label(linha, text="Assunto", style="Campo.TLabel").pack(side="left")
+        ttk.Label(linha, text="opcional", style="Sub.TLabel").pack(side="left", padx=(_p(8), 0))
+        self.v_tassunto = tk.StringVar()
+        e = ttk.Entry(f, textvariable=self.v_tassunto, font=(self.fonte, 11))
+        e.pack(fill="x", pady=(_p(6), _p(20)))
+        e.focus_set()
+
+        self._campo(f, "Duração")
+        self.v_tdur = tk.IntVar(value=getattr(self, "_ult_tdur", _tr.DURACAO_PADRAO_S // 60))
+        linha = ttk.Frame(f)
+        linha.pack(fill="x", pady=(_p(6), _p(20)))
+        for n in _tr.DURACOES_MIN:
+            ttk.Radiobutton(linha, text=f"{n} min", value=n, variable=self.v_tdur).pack(side="left", padx=(0, _p(14)))
+
+        # mais opções: alvo de ritmo e a nota do Sinapse que confere o conteúdo
+        alvos = {f"{_tr._br(a, 1)} sílabas/s · {r}": a for a, r in sorted(_tr.ALVOS.items(), key=lambda x: -x[0])}
+        self._alvos = alvos
+        self.v_talvo = tk.StringVar(value=next(k for k, a in alvos.items() if a == _tr.ALVO_PADRAO))
+        notas = _tr.notas_de_estudo()
+        self._notas = notas
+        self.v_tnota = tk.StringVar(value="nenhuma")
+        corpo, resumo = self._recolhivel(f, "Mais opções", "", link=True)
+
+        def atualizar(*_):
+            nota = self.v_tnota.get()
+            resumo.configure(text=f"ritmo alvo {_tr._br(alvos[self.v_talvo.get()], 1)} sílabas/s · "
+                                  + ("sem nota" if nota == "nenhuma" else f"confere com a nota {nota}"))
+        ttk.Label(corpo, text="Alvo de ritmo", style="Sub.TLabel").pack(anchor="w")
+        cb = ttk.Combobox(corpo, textvariable=self.v_talvo, values=list(alvos), state="readonly",
+                          font=(self.fonte, 10))
+        cb.pack(fill="x", pady=(_p(2), _p(8)))
+        cb.bind("<<ComboboxSelected>>", atualizar)
+        ttk.Label(corpo, text="Nota do Sinapse para conferir o conteúdo (explicar tema)",
+                  style="Sub.TLabel", wraplength=_p(370)).pack(anchor="w")
+        cbn = ttk.Combobox(corpo, textvariable=self.v_tnota, values=["nenhuma", *notas], state="readonly",
+                           font=(self.fonte, 10))
+        cbn.pack(fill="x", pady=(_p(2), 0))
+        cbn.bind("<<ComboboxSelected>>", atualizar)
+        atualizar()
+
+        rod = ttk.Frame(f)
+        rod.pack(side="bottom", fill="x")
+        self.b_treinar = ttk.Button(rod, text="Começar", style="Primario.TButton", command=self.treino_gravar)
+        self.b_treinar.pack(fill="x")
+
+    def treino_gravar(self):
+        nota = self.v_tnota.get()
+        self._ult_ttipo, self._ult_tdur = self.v_ttipo.get(), self.v_tdur.get()
+        self.tctx = {"tipo": self.v_ttipo.get(), "assunto": self.v_tassunto.get().strip(),
+                     "nota": str(self._notas[nota]) if nota in self._notas else None,
+                     "duracao_alvo_s": int(self.v_tdur.get()) * 60, "alvo": self._alvos[self.v_talvo.get()]}
+        self.b_treinar.configure(text="Preparando o microfone…", state="disabled")
+
+        def preparar():
+            try:
+                disp = record.escolher_so_microfone(self.cfg.get("microfone"))
+                self.q.put(lambda: self._treino_comecar(disp))
+            except Exception as e:
+                msg = str(e)
+                _log(traceback.format_exc())
+                self.q.put(lambda: (messagebox.showerror("Atas", f"Não consegui abrir o microfone:\n{msg}"),
+                                    self.treino_inicio()))
+        threading.Thread(target=preparar, daemon=True).start()
+
+    def _treino_comecar(self, disp):
+        import treino as _tr
+        c = self.tctx
+        self.t = _tr.Treino.criar(c["tipo"], c["assunto"], c["nota"], c["duracao_alvo_s"], c["alvo"])
+        self.gt = record.Gravador(self.t, disp)
+        self.gt.iniciar()
+        _log(f"treino {self.t.id} · mic {disp['mic'].name}")
+        f = self._limpar()
+        self.l_trec = ttk.Label(f, text="● Treinando", style="Rec.TLabel")
+        self.l_trec.pack(anchor="w")
+        ttk.Label(f, text=_tr.TIPOS_TREINO[c["tipo"]] + (f" · {c['assunto']}" if c["assunto"] else ""),
+                  style="Sub.TLabel", wraplength=_p(370)).pack(anchor="w")
+        self.l_ttempo = ttk.Label(f, text="0:00", style="Grande.TLabel")
+        self.l_ttempo.pack(anchor="w", pady=(_p(18), 0))
+        self.l_talvo = ttk.Label(f, text=f"alvo {_tr._mmss(c['duracao_alvo_s'])}", style="Sub.TLabel")
+        self.l_talvo.pack(anchor="w", pady=(0, _p(24)))
+        ttk.Label(f, text="Microfone", style="Sub.TLabel").pack(anchor="w")
+        self.b_tnivel = ttk.Progressbar(f, maximum=100)
+        self.b_tnivel.pack(fill="x", pady=(_p(2), _p(14)))
+        ttk.Label(f, text=f"Microfone: {_curto(disp['mic'].name)}", style="Sub.TLabel",
+                  wraplength=_p(370)).pack(anchor="w")
+        self.l_talerta = ttk.Label(f, text="\n".join(disp["avisos"]), style="Alerta.TLabel", wraplength=_p(370))
+        self.l_talerta.pack(anchor="w", pady=(_p(8), 0))
+        ttk.Button(f, text="Parar e ver o retorno", style="Primario.TButton",
+                   command=self.treino_parar).pack(side="bottom", fill="x")
+        self._treino_tique()
+
+    def _treino_tique(self):
+        import treino as _tr
+        if self.gt is None:
+            return
+        dec, alvo = self.gt.decorrido(), self.tctx["duracao_alvo_s"]
+        self.title(f"● {_tr._mmss(dec)} — Treino")
+        self.l_ttempo.configure(text=_tr._mmss(dec))
+        if dec >= alvo:
+            self.l_talvo.configure(text=f"passou do alvo de {_tr._mmss(alvo)}: feche a ideia")
+        self.b_tnivel["value"] = _nivel_pct(self.gt.niveis().get("mic", 0))
+        c = self.gt.canais.get("mic")
+        alerta = ""
+        if c is None or c.morto or not c.is_alive():
+            alerta = "O microfone parou: " + ((c.morto if c else None) or "motivo desconhecido")
+        elif (self.gt.mudo_ha("mic") or 0) > 20:
+            alerta = "Não chega som do microfone."
+        self.l_talerta.configure(text=alerta)
+        self.after(250, self._treino_tique)
+
+    def treino_parar(self):
+        import treino as _tr
+        g, self.gt = self.gt, None
+        if g is None:
+            return
+        g.parar()
+        t = self.t
+        self.analisando_treino = True
+        f = self._limpar()
+        self.title("Analisando o treino — Atas")
+        ttk.Label(f, text="Analisando o treino", style="T.TLabel").pack(anchor="w")
+        ttk.Label(f, text=f"{_tr._mmss(t.duracao_s())} gravados", style="Sub.TLabel").pack(anchor="w", pady=(0, _p(20)))
+        self.l_tmsg = ttk.Label(f, text="Começando…", style="Sub.TLabel", wraplength=_p(370))
+        self.l_tmsg.pack(anchor="w")
+        barra = ttk.Progressbar(f, mode="indeterminate")
+        barra.pack(fill="x", pady=(_p(10), 0))
+        barra.start(12)
+
+        def log(msg):
+            _log(msg)
+            m = str(msg).strip()
+            self.q.put(lambda: self.l_tmsg.configure(text=m))
+
+        def rodar():
+            try:
+                _tr.analisar(t, self.cfg, log=log)
+            except Exception as e:
+                _log(traceback.format_exc())
+                try:
+                    t.m.setdefault("resultado", {})["erro"] = f"erro na análise: {e} — ver local/atas.log"
+                    t.salvar()
+                except Exception:
+                    pass
+            finally:
+                self.q.put(lambda: self.treino_resultado(t))
+        threading.Thread(target=rodar, daemon=True).start()
+
+    def treino_resultado(self, t):
+        import treino as _tr
+        self.analisando_treino = False
+        t = _tr.Treino.abrir(t.pasta)
+        r = t.m.get("resultado") or {}
+        m = r.get("metrics") or {}
+        f = self._limpar()
+        self.title("Seu treino — Atas")
+        self.geometry(f"{self.winfo_width()}x{max(self.winfo_height(), _p(660))}")
+        ttk.Label(f, text="Seu treino", style="T.TLabel").pack(anchor="w")
+        sub = _tr.TIPOS_TREINO.get(t.tipo_treino, "") + (f" · {t.m['assunto']}" if t.m.get("assunto") else "")
+        if m:
+            sub += f" · {_tr._mmss(m.get('fala_s'))} de fala"
+        ttk.Label(f, text=sub, style="Sub.TLabel", wraplength=_p(370)).pack(anchor="w", pady=(0, _p(18)))
+        if r.get("erro"):
+            ttk.Label(f, text=r["erro"], style="Alerta.TLabel", wraplength=_p(370)).pack(anchor="w")
+
+        # os 4 números, cada um com meia linha de leitura e a comparação
+        for it in r.get("principais") or []:
+            linha = ttk.Frame(f)
+            linha.pack(fill="x")
+            ttk.Label(linha, text=it["nome"], style="Texto.TLabel").pack(side="left")
+            ttk.Label(linha, text=it["valor_txt"], style="ValorAlerta.TLabel" if it["status"] == "fora"
+                      else "Valor.TLabel").pack(side="right")
+            leit = " · ".join(x for x in (it.get("curto"), it["comparacao"]) if x and x != "—")
+            ttk.Label(f, text=leit, style="Sub.TLabel", wraplength=_p(370)).pack(anchor="w", pady=(0, _p(12)))
+
+        # o retorno do Claude: 1 coisa para manter, 1 para mudar
+        ret = r.get("retorno")
+        if ret:
+            for rot, chave in (("Manter", "manter"), ("Mudar", "mudar")):
+                ttk.Label(f, text=rot, style="Campo.TLabel").pack(anchor="w", pady=(_p(6), 0))
+                ttk.Label(f, text=ret[chave]["texto"], style="Texto.TLabel", wraplength=_p(370),
+                          justify="left").pack(anchor="w")
+        elif r.get("retorno_erro") and not r.get("erro"):
+            ttk.Label(f, text=f"Sem retorno do Claude: {r['retorno_erro']}", style="Sub.TLabel",
+                      wraplength=_p(370)).pack(anchor="w", pady=(_p(6), 0))
+
+        # links: ouvir o trecho mais corrido · ver tudo (a página com a leitura completa de cada número,
+        # os pontos do Claude e o conteúdo contra a nota). O resto não cabe na janela, e não deve.
+        links = ttk.Frame(f)
+        links.pack(fill="x", pady=(_p(16), 0))
+        pagina = t.caminho("resultado.html")
+        if pagina.exists():
+            def ver():
+                import os
+                os.startfile(str(pagina))
+            self._link(links, "Ver tudo", ver).pack(side="right")
+        tc = m.get("trecho_corrido")
+        if tc:
+            def ouvir():
+                def tocar():
+                    try:
+                        wav = _tr.trecho_wav(t, tc["ini"], tc["fim"])
+                        if wav is None:
+                            self.q.put(lambda: messagebox.showinfo("Atas", "O áudio deste treino já foi apagado."))
+                            return
+                        import winsound
+                        winsound.PlaySound(str(wav), winsound.SND_FILENAME | winsound.SND_ASYNC)
+                    except Exception as e:
+                        _log(traceback.format_exc())
+                        self.q.put(lambda: messagebox.showerror("Atas", f"Não consegui tocar o trecho: {e}"))
+                threading.Thread(target=tocar, daemon=True).start()
+            self._link(links, f"Ouvir o trecho mais rápido ({_tr._mmss(tc['ini'])})", ouvir).pack(side="left")
+
+        rod = ttk.Frame(f)
+        rod.pack(side="bottom", fill="x")
+        ttk.Button(rod, text="Treinar de novo", style="Primario.TButton", command=self.treino_inicio).pack(fill="x")
+        linha = ttk.Frame(rod)
+        linha.pack(fill="x", pady=(_p(10), 0))
+        self._link(linha, "Abrir a pasta",
+                   lambda: __import__("atas").abrir_no_explorer(t.caminho("resultado.html"))).pack(side="left")
+        self._link(linha, "Reuniões", self.inicio).pack(side="right")
 
 
 def main():
