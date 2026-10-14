@@ -14,7 +14,7 @@ VOZ = {"volume_db": -32.6, "volume_variacao_db": 5.1, "tom_hz": 138, "tom_p10_hz
 
 def test_zonas_e_bordas():
     assert analise_fala._zona("entonacao_st", 1.0)[0] == "monótona"
-    assert analise_fala._zona("entonacao_st", 2.2)[0] == "viva"           # borda entra na zona de cima
+    assert analise_fala._zona("entonacao_st", 2.2)[0] == "típica"         # borda entra na zona de cima
     assert analise_fala._zona("entonacao_st", 9.0)[0] == "agitada"        # fora da escala = última zona
     assert analise_fala._zona("volume_db", -60)[0] == "muito baixo"       # abaixo da escala = primeira
     assert analise_fala._zona("volume_db", -32.6)[0] == "baixo"
@@ -24,7 +24,7 @@ def test_leitura_explica_cada_medida():
     itens, evolucao = analise_fala.leitura_voz(VOZ)
     por = {it["chave"]: it for it in itens}
     assert set(por) == {"entonacao_st", "volume_variacao_db", "volume_db", "tom_hz"}
-    assert por["entonacao_st"]["zona"] == "viva" and por["entonacao_st"]["dica"]
+    assert por["entonacao_st"]["zona"] == "típica" and por["entonacao_st"]["dica"]
     assert por["volume_variacao_db"]["zona"] == "com ênfase"
     assert "não de quanto você fala alto" in por["volume_db"]["o_que_e"], "nível é do microfone, não da voz"
     assert "104 a 190 Hz" in por["tom_hz"]["o_que_e"]
@@ -46,6 +46,6 @@ def test_evolucao_estavel_e_sem_blocos():
 def test_pagina_mostra_regua_e_dica():
     h = raio_x_html._secao_voz(VOZ)
     assert h.count('class="regua"') == 4 and h.count('class="marca"') == 4
-    assert "O que fazer:" in h and "Você:</b> viva" in h
+    assert "O que fazer:" in h and "Você:</b> típica" in h
     assert "Tom (Hz) por bloco" in h and "Entonação (semitons) por bloco" in h
     assert "st</div>" not in h, "nada de número solto sem leitura"
