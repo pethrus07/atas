@@ -6,9 +6,10 @@ Roda no venv 'diar' (Python 3.12) — separado do venv de transcrição (3.14),
 porque o sherpa-onnx não tem roda para o 3.14. É chamado pelo transcribe.py por
 subprocess. Aqui só entram numpy e sherpa_onnx.
 
-Uso (CLI): python diarize.py <audio.pcm|audio.wav> [threshold] [num_speakers] [max_falantes]
+Uso (CLI): python diarize.py <audio.pcm|audio.wav> [threshold] [num_speakers] [max_falantes] [referencia.wav]
 Saída (stdout, última linha): JSON
-    {"turnos": [{start, end, speaker}], "falantes": N, "modo": "...", "brutos": M}
+    {"turnos": [{start, end, speaker}], "falantes": N, "modo": "...", "brutos": M,
+     "similaridade": {speaker: cosseno com a voz de referência}}   ← só com referência
 
 Modelos (offline, baixados uma vez) em models/diar/:
   - sherpa-onnx-pyannote-segmentation-3-0/model.onnx  (detecta fala/troca de voz)
@@ -85,7 +86,43 @@ def relevantes(turnos, fatia_min=FATIA_MIN, min_seg=MIN_SEG_S):
     return sum(1 for v in tempo.values() if v / total >= fatia_min and v >= min_seg)
 
 
-def diarizar(caminho, threshold=0.5, num_speakers=-1, max_falantes=6):
+def _embedding(extrator, audio):
+    st = extrator.create_stream()
+    st.accept_waveform(SR, audio)
+    st.input_finished()
+    v = np.asarray(extrator.compute(st), dtype=np.float32)
+    return v / (np.linalg.norm(v) + 1e-9)
+
+
+def similaridades(audio, turnos, referencia, max_s=30.0, min_s=2.0):
+    """Quanto a voz de cada grupo parece com a voz de referência (cosseno entre os vetores CAM++).
+
+    Serve ao áudio do celular (14/10/2026): um canal só, com o Pedro junto dos outros. A referência
+    é uma amostra da voz dele tirada do canal do microfone de uma reunião gravada pelo Atas (que só
+    tem ele). Cada grupo entra com os turnos mais longos até `max_s`; grupo com menos de `min_s`
+    de fala fica de fora (vetor de voz de 1 s não diz nada)."""
+    ext = sherpa_onnx.SpeakerEmbeddingExtractor(
+        sherpa_onnx.SpeakerEmbeddingExtractorConfig(model=str(EMB)))
+    ref, sr = _ler(referencia)
+    if sr != SR or ref.size < SR * min_s:
+        raise RuntimeError("amostra de referência ausente, curta ou fora de 16 kHz")
+    e_ref = _embedding(ext, ref)
+    out = {}
+    for spk in sorted({t["speaker"] for t in turnos}):
+        pedacos, tot = [], 0.0
+        for t in sorted((t for t in turnos if t["speaker"] == spk),
+                        key=lambda t: t["end"] - t["start"], reverse=True):
+            pedacos.append(audio[int(t["start"] * SR):int(t["end"] * SR)])
+            tot += t["end"] - t["start"]
+            if tot >= max_s:
+                break
+        if tot < min_s:
+            continue
+        out[str(spk)] = round(float(np.dot(e_ref, _embedding(ext, np.concatenate(pedacos)))), 3)
+    return out
+
+
+def diarizar(caminho, threshold=0.5, num_speakers=-1, max_falantes=6, referencia=None):
     audio, sr = _ler(caminho)
     if sr != SR:
         raise RuntimeError(f"áudio a {sr}Hz, esperado {SR}Hz")
@@ -93,18 +130,25 @@ def diarizar(caminho, threshold=0.5, num_speakers=-1, max_falantes=6):
         return {"turnos": [], "falantes": 0, "modo": "vazio", "brutos": 0}
     if int(num_speakers) >= 1:
         turnos = _rodar(audio, threshold, int(num_speakers))
-        return {"turnos": turnos, "falantes": len({t["speaker"] for t in turnos}),
-                "modo": "informado", "brutos": int(num_speakers)}
-    turnos = _rodar(audio, threshold, -1)
-    brutos = len({t["speaker"] for t in turnos})
-    n = max(1, min(int(max_falantes), relevantes(turnos)))
-    if n < brutos:
-        turnos = _rodar(audio, threshold, n)
-        modo = "teto"
+        res = {"turnos": turnos, "falantes": len({t["speaker"] for t in turnos}),
+               "modo": "informado", "brutos": int(num_speakers)}
     else:
-        modo = "limiar"
-    return {"turnos": turnos, "falantes": len({t["speaker"] for t in turnos}),
-            "modo": modo, "brutos": brutos}
+        turnos = _rodar(audio, threshold, -1)
+        brutos = len({t["speaker"] for t in turnos})
+        n = max(1, min(int(max_falantes), relevantes(turnos)))
+        if n < brutos:
+            turnos = _rodar(audio, threshold, n)
+            modo = "teto"
+        else:
+            modo = "limiar"
+        res = {"turnos": turnos, "falantes": len({t["speaker"] for t in turnos}),
+               "modo": modo, "brutos": brutos}
+    if referencia:
+        try:
+            res["similaridade"] = similaridades(audio, res["turnos"], referencia)
+        except Exception as e:                    # referência é bônus: nunca derruba a diarização
+            res["similaridade_erro"] = f"{type(e).__name__}: {e}"[:300]
+    return res
 
 
 if __name__ == "__main__":
@@ -112,4 +156,5 @@ if __name__ == "__main__":
     thr = float(sys.argv[2]) if len(sys.argv) > 2 else 0.5
     nsp = int(sys.argv[3]) if len(sys.argv) > 3 else -1
     mx = int(sys.argv[4]) if len(sys.argv) > 4 else 6
-    print(json.dumps(diarizar(arq, thr, nsp, mx), ensure_ascii=False))
+    ref = sys.argv[5] if len(sys.argv) > 5 and sys.argv[5] else None
+    print(json.dumps(diarizar(arq, thr, nsp, mx, ref), ensure_ascii=False))

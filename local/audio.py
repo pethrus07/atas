@@ -117,7 +117,11 @@ def aposentar_pcm(sessao):
 
 
 def fonte_audio(sessao, nome):
-    """O áudio disponível de um canal: o PCM se ainda existir, senão o Opus."""
+    """O áudio disponível de um canal: o PCM se ainda existir, senão o Opus. O canal "celular"
+    (reunião presencial importada, um arquivo só) nunca tem PCM: é o audio/celular.opus."""
+    if nome == "celular":
+        op = sessao.audio_dir / "celular.opus"
+        return op if op.exists() else None
     pcm = sessao.mic_pcm if nome == "mic" else sessao.loop_pcm
     if pcm.exists():
         # PCM de 0 bytes (canal que morreu ao abrir) não é áudio: tratar como ausente

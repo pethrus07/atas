@@ -56,6 +56,17 @@ Invoke-Expression "$A mostrar ultima"
 - Com o sim dele: `formato <id> <descoberta|demo|alinhamento>`. O comando refaz o Raio-X (a
   faixa da fatia de fala muda: descoberta 35–50%, demo/alinhamento 45–60%, vazio 35–55%).
 
+### 1c. Reunião presencial do celular (`origem: celular` no `mostrar`)
+- Um canal só: **"Você" foi estimado pela voz** (amostra de referência ou tom) e está "a
+  confirmar"; o Raio-X e a avaliação ficam `pendente` até ele confirmar. Pergunte isso
+  **primeiro**, mostrando 2–3 falas de "Você" com `[mm:ss]` e a evidência do `mostrar`.
+  - Acertou: `confirmar <id>` (ou `falantes <id> "Você=Você"`).
+  - Errou / ninguém virou "Você": `falantes <id> "Participante 2=Você"` (troca os rótulos na
+    transcrição). Se a ata já estava estruturada, ofereça `processar <id> --forcar estrutura,avaliacao`.
+  - O Raio-X roda sozinho depois da confirmação.
+- **Tipo pendente** (importado sem `--tipo`): pergunte o tipo junto (nunca deduza cliente):
+  `tipo <id> <cliente|parresia|carreira|pessoal>`. Até lá não há entregável nem publicação.
+
 ### 2. Quem é quem (sempre antes de tudo)
 - Mostre só os rótulos que importam: com nome deduzido "a confirmar", ou sem nome e com fala
   relevante. Para cada um, a evidência (`[mm:ss] trecho`).

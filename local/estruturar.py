@@ -38,6 +38,28 @@ def _data_reuniao(sessao):
     return d
 
 
+def _linhas_celular(sessao, meu_nome, papel):
+    """Reunião presencial gravada no celular: um canal só, todo mundo no mesmo áudio. Quem é o
+    Pedro foi estimado pela voz e ainda não foi confirmado por ele (14/10/2026)."""
+    cel = sessao.m.get("celular") or {}
+    tem_voce = bool(cel.get("rotulo"))
+    if tem_voce and cel.get("voce_confirmado"):
+        quem = f"- \"Você\" na transcrição é {meu_nome} (confirmado por ele). {papel}"
+    elif tem_voce:
+        quem = (f"- \"Você\" na transcrição é PROVAVELMENTE {meu_nome}, estimado pela voz e ainda "
+                f"não confirmado. Se o texto mostrar que outro rótulo é {meu_nome} (ele é chamado pelo "
+                f"nome e responde), diga isso em `falantes`. {papel}")
+    else:
+        quem = (f"- Não deu para saber pela voz qual rótulo é {meu_nome}: ele é um dos "
+                f"\"Participante N\". Deduza em `falantes` só com evidência. {papel}")
+    return [
+        "- Reunião PRESENCIAL gravada no celular: um áudio só, com todas as vozes juntas, separadas "
+        "por uma máquina que erra (a mesma pessoa pode aparecer sob vários rótulos, e um rótulo "
+        "pode misturar pessoas).",
+        quem,
+    ]
+
+
 def prompt(sessao, meu_nome):
     d = _data_reuniao(sessao)
     remotos = sessao.participantes_remotos()
@@ -49,6 +71,7 @@ def prompt(sessao, meu_nome):
                    "Esta ata pode ser enviada ao cliente: tom profissional.",
         "carreira": f"Reunião sobre a carreira de {meu_nome}.",
         "pessoal": "Reunião pessoal ou de estudo.",
+        "pendente": "O tipo da reunião ainda não foi escolhido: escreva neutro, como ata interna.",
     }.get(tipo, "")
     linhas = [
         "Você vai produzir a ATA ESTRUTURADA de uma reunião. A transcrição completa chega no "
@@ -59,10 +82,11 @@ def prompt(sessao, meu_nome):
         f"- Data: {d:%Y-%m-%d} ({_DIAS[d.weekday()]})",
         f"- Tipo: {TIPOS.get(tipo, tipo)}" + (f" · projeto: {sessao.m['projeto']}"
                                                if sessao.m.get("projeto") else ""),
-        f"- \"Você\" na transcrição é {meu_nome} (microfone dele). {papel}",
-        "- \"Participante\" / \"Participante N\" é o áudio da chamada. A separação automática "
-        "de vozes é imperfeita: a mesma pessoa pode aparecer sob vários rótulos, e um rótulo "
-        "pode misturar pessoas.",
+        *(_linhas_celular(sessao, meu_nome, papel) if sessao.celular else [
+            f"- \"Você\" na transcrição é {meu_nome} (microfone dele). {papel}",
+            "- \"Participante\" / \"Participante N\" é o áudio da chamada. A separação automática "
+            "de vozes é imperfeita: a mesma pessoa pode aparecer sob vários rótulos, e um rótulo "
+            "pode misturar pessoas."]),
         ("- Participantes remotos informados por ele: " + ", ".join(remotos) +
          " (podem não ter falado todos).") if remotos else
         "- Os participantes remotos não foram informados.",

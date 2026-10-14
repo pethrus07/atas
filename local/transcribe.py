@@ -166,14 +166,15 @@ def _passada(modelo, audio, falante, hotwords=None, idioma="pt"):
     return out
 
 
-def _diarizar(arquivo, threshold, num_speakers, max_falantes, diar_py=None):
-    """Roda diarize.py no venv separado. Devolve o dict de saída, ou levanta com o motivo."""
+def _diarizar(arquivo, threshold, num_speakers, max_falantes, diar_py=None, referencia=None):
+    """Roda diarize.py no venv separado. Devolve o dict de saída, ou levanta com o motivo.
+    `referencia`: wav com a voz do Pedro → a saída traz `similaridade` por grupo (áudio do celular)."""
     py = pathlib.Path(diar_py) if diar_py else _DIAR_PY
     if not py.exists():
         raise RuntimeError(f"venv da diarização não encontrado: {py}")
     r = subprocess.run(
         [str(py), str(_DIAR_SCRIPT), str(arquivo), str(threshold), str(num_speakers),
-         str(max_falantes)],
+         str(max_falantes)] + ([str(referencia)] if referencia else []),
         capture_output=True, text=True, timeout=3600,
     )
     for ln in reversed((r.stdout or "").splitlines()):
@@ -187,13 +188,14 @@ def _diarizar(arquivo, threshold, num_speakers, max_falantes, diar_py=None):
                        f"{(r.stderr or '').strip()[-400:]}")
 
 
-def rotular_participantes(segs_part, turnos):
+def rotular_participantes(segs_part, turnos, prefixo="Participante", ordem_out=None):
     """Reetiqueta 'Participante' -> 'Participante N' por sobreposição de tempo.
 
     Casa por TEMPO porque os dois lados são independentes: o Whisper corta por frase
     e o diarizador por troca de voz, então os limites nunca batem — o dono do trecho
     é quem mais o ocupa. Numera na ordem de aparição. Um locutor só → 'Participante'.
-    Devolve o número de rótulos distintos aplicados."""
+    Devolve o número de rótulos distintos aplicados. `prefixo` troca o 'Participante' (o áudio
+    do celular usa 'Falante'); `ordem_out` (dict) recebe {grupo do diarizador: N}."""
     if not turnos or not segs_part:
         return 1 if segs_part else 0
 
@@ -222,13 +224,105 @@ def rotular_participantes(segs_part, turnos):
             ordem[b] = len(ordem) + 1
     for s in segs_part:
         b = s.pop("_spk", None)
-        s["speaker"] = f"Participante {ordem[b]}" if b in ordem else "Participante"
+        s["speaker"] = f"{prefixo} {ordem[b]}" if b in ordem else prefixo
+    if ordem_out is not None:
+        ordem_out.update(ordem)
     return len(ordem)
+
+
+def transcrever_celular(sessao, cfg, log=print):
+    """Reunião presencial importada do celular: um canal só com todo mundo (ver celular.py).
+    Transcreve, separa as vozes com N = participantes informados + o Pedro, acha qual grupo é o
+    Pedro (amostra de referência, depois tom) e rotula "Você" / "Participante N", a confirmar."""
+    import audio as _audio
+    import celular
+
+    t_ini = time.time()
+    modelo, info = carregar_modelo(cfg.get("model", "auto"), cfg.get("dispositivo", "auto"), log)
+    log(f"  Modelo {info['modelo']} em {info['dispositivo'].upper()}")
+    remotos = sessao.participantes_remotos()
+    hot = vocabulario(sessao.tipo, sessao.m.get("projeto"), remotos, cfg.get("meu_nome")) \
+        if cfg.get("vocabulario", True) else []
+    info["vocabulario"] = len(hot)
+    fonte = _audio.fonte_audio(sessao, "celular")
+    x = _audio.ler_audio(fonte)
+    log("  Transcrevendo o áudio do celular…")
+    segs = _passada(modelo, x, "Falante", hot, cfg.get("idioma", "pt"))
+
+    n = len(remotos) + 1 if remotos else -1
+    ref = celular.referencia(cfg)
+    if ref is None:
+        try:
+            ref = celular.criar_referencia(log=log)
+        except Exception as e:
+            log(f"    sem amostra da sua voz ({e}); vou tentar pelo tom")
+    diar, sims, ordem = {"status": "pulada"}, {}, {}
+    if segs and cfg.get("diarizar", True):
+        log("  Separando as vozes" + (f" ({n} pessoas, contando você)…" if n > 0 else "…"))
+        tmp = pathlib.Path(tempfile.mkdtemp()) / "celular.wav"
+        try:
+            _audio.escrever_wav(tmp, x)
+            res = _diarizar(tmp, cfg.get("diar_threshold", 0.5), n, cfg.get("diar_max_falantes", 6),
+                            cfg.get("diar_python"), referencia=ref)
+            rot = rotular_participantes(segs, res.get("turnos"), prefixo="Falante", ordem_out=ordem)
+            sims = {f"Falante {ordem[int(k)]}": v for k, v in (res.get("similaridade") or {}).items()
+                    if int(k) in ordem}
+            diar = {"status": "ok", "modo": res.get("modo"), "falantes": rot,
+                    "grupos_brutos": res.get("brutos")}
+            if res.get("similaridade_erro"):
+                diar["referencia_erro"] = res["similaridade_erro"]
+        except Exception as e:
+            diar = {"status": "falhou", "detalhe": f"{type(e).__name__}: {e}"[:500]}
+            log(f"    ⚠ separação de vozes falhou — todas as falas ficam num rótulo só: {e}")
+        finally:
+            if tmp.exists():
+                tmp.unlink()
+            try:
+                tmp.parent.rmdir()
+            except OSError:
+                pass
+
+    rotulos = sorted({s["speaker"] for s in segs})
+    escolha = celular.escolher_voce(sims) if len(rotulos) >= 2 else \
+        {"rotulo": None, "metodo": "nenhum", "evidencia": "as vozes não foram separadas"}
+    tons = {}
+    if escolha["rotulo"] is None and len(rotulos) >= 2:
+        tom_ref = celular.tom_de_referencia()
+        if tom_ref:
+            import analise_fala
+            for r in rotulos:
+                v = analise_fala.voz([dict(s, speaker="Você") for s in segs if s["speaker"] == r], fonte)
+                if v:
+                    tons[r] = v["tom_hz"]
+            escolha = celular.escolher_voce(sims, tons, tom_ref)
+            escolha["tom_referencia_hz"] = tom_ref
+    mapa = celular.aplicar_rotulos(segs, escolha["rotulo"])
+    cel = {**escolha, "rotulo": "Você" if escolha["rotulo"] else None, "grupo": escolha["rotulo"],
+           "similaridades": {mapa.get(k, k): v for k, v in sims.items()},
+           "tons_hz": {mapa.get(k, k): v for k, v in tons.items()},
+           "referencia": str(ref) if ref else None, "voce_confirmado": False}
+    sessao.m["celular"] = cel
+    sessao.salvar()
+    quem = ("você = " + escolha["rotulo"] + f" pela {'amostra de voz' if escolha['metodo'] == 'referencia' else 'altura da voz'}"
+            " (a confirmar)") if escolha["rotulo"] else "não deu para saber qual é você (a confirmar no /ata)"
+    if diar.get("status") == "ok":
+        diar["detalhe"] = f"{diar['falantes']} voz(es) · {diar.get('modo')} · {quem}"
+    log(f"    {quem}")
+    info["diarizacao"] = diar
+    info["celular"] = cel
+    segs.sort(key=lambda s: s["start"])
+    info["segundos_processamento"] = round(time.time() - t_ini, 1)
+    info["trechos"] = len(segs)
+    log(f"  {len(segs)} trechos transcritos em {info['segundos_processamento']:.0f}s.")
+    return segs, info
 
 
 def transcrever_sessao(sessao, cfg, log=print):
     """Transcreve os canais disponíveis da sessão. Devolve (segmentos, info)."""
     import audio as _audio
+
+    if sessao.celular:                             # um canal só, todos juntos (14/10/2026)
+        return transcrever_celular(sessao, cfg, log)
 
     t_ini = time.time()
     modelo, info = carregar_modelo(cfg.get("model", "auto"), cfg.get("dispositivo", "auto"), log)

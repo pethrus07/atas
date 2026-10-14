@@ -196,6 +196,16 @@ def _etapa_publicacao(s, a, cfg, log, publicar_):
             "(botão na tela ou `atas.py publicar`)")
 
 
+VOCE_PENDENTE = ("áudio do celular: confirme quem é você no /ata (`atas.py falantes <id> "
+                 "\"Participante N=Você\"` ou `confirmar <id>`); medir a voz de outra pessoa como se "
+                 "fosse a sua estragaria o histórico")
+
+
+def voce_a_confirmar(s):
+    """Reunião do celular em que ainda não se sabe com certeza quais falas são do Pedro."""
+    return s.celular and not (s.m.get("celular") or {}).get("voce_confirmado")
+
+
 def ata_garantida(s):
     """A ata desta reunião já não depende do áudio? Só então a retenção pode apagá-lo."""
     segs, a = carregar(s)
@@ -223,7 +233,8 @@ def processar(s, cfg=None, log=print, forcar=(), estruturar=None, publicar_=None
         # ── transcrição ──
         segs, a = carregar(s)
         if "transcricao" in forcar or not s.caminho("transcricao.json").exists():
-            if not (audio.fonte_audio(s, "mic") or audio.fonte_audio(s, "loop")):
+            if not (audio.fonte_audio(s, "mic") or audio.fonte_audio(s, "loop")
+                    or audio.fonte_audio(s, "celular")):
                 s.etapa("transcricao", "falhou", "não há áudio nesta sessão")
                 s.estado("falhou")
                 return s.m["etapas"]
@@ -286,10 +297,12 @@ def processar(s, cfg=None, log=print, forcar=(), estruturar=None, publicar_=None
         rx = {"m": None}
         if s.m.get("legado"):
             s.etapa("raio_x", "pulada", "reunião anterior à v2 já está no histórico")
+        elif voce_a_confirmar(s):
+            s.etapa("raio_x", "pendente", VOCE_PENDENTE)
         elif segs:
             def _rx():
                 # o .pcm ainda existe aqui (a etapa de áudio vem depois); depois, vale o .opus
-                mic = s.mic_pcm if s.mic_pcm.exists() else s.caminho("audio") / "mic.opus"
+                mic = s.audio_da_voz()
                 av = _aval.mais_recente(s)
                 r = analise_fala.processar(segs, s.m.get("titulo"), s.m.get("inicio") or "",
                                            tipo=s.tipo, sessao_id=s.id, audio_mic=mic,
@@ -321,6 +334,9 @@ def processar(s, cfg=None, log=print, forcar=(), estruturar=None, publicar_=None
         # ── avaliação interna (v2.1): afirmações conferidas, valores, negociação, postura ──
         # Só reunião de cliente/Parresia com ata estruturada; nunca vai ao entregável.
         if (a.get("status") in ("estruturada", "revisada") and _aval.deve_avaliar(s, segs, cfg)
+                and voce_a_confirmar(s)):
+            s.etapa("avaliacao", "pendente", VOCE_PENDENTE)
+        elif (a.get("status") in ("estruturada", "revisada") and _aval.deve_avaliar(s, segs, cfg)
                 and (s.status_etapa("avaliacao") != "ok" or "avaliacao" in forcar)):
             def _av():
                 caminho, meta = _aval.avaliar(s, segs, a, rx["m"], cfg, log)

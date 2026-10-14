@@ -138,22 +138,29 @@ def rotulos(segs):
 
 
 # ── participantes ────────────────────────────────────────────────────────────
-def participantes_iniciais(segs, meu_nome, remotos):
+def participantes_iniciais(segs, meu_nome, remotos, voce_a_confirmar=None):
     """O que se sabe sem IA: 'Você' é o Pedro; se só um remoto foi informado e o
-    loopback não foi separado, 'Participante' é ele."""
+    loopback não foi separado, 'Participante' é ele.
+
+    `voce_a_confirmar` (áudio do celular, 14/10/2026): a evidência de por que um rótulo virou
+    "Você". Aí nada é certo — nem "Você", nem o remoto único que depende dele — até o Pedro
+    confirmar no /ata (`atas.py falantes` / `confirmar`)."""
     rots = rotulos(segs)
     tempo = {}
     for s in segs:
         tempo[s["speaker"]] = tempo.get(s["speaker"], 0.0) + max(0.0, s["end"] - s["start"])
     total = sum(tempo.values()) or 1.0
+    certo = not voce_a_confirmar
     out = []
     for r in rots:
         if r == "Você":
-            out.append({"rotulo": r, "nome": meu_nome, "origem": "eu", "confirmado": True,
-                        "evidencia": None, "fatia": round(tempo.get(r, 0) / total, 3)})
+            out.append({"rotulo": r, "nome": meu_nome, "origem": "eu" if certo else "voz",
+                        "confirmado": certo, "evidencia": None if certo else voce_a_confirmar,
+                        "fatia": round(tempo.get(r, 0) / total, 3)})
         elif r == "Participante" and len(remotos) == 1:
             out.append({"rotulo": r, "nome": remotos[0], "origem": "informado",
-                        "confirmado": True, "evidencia": "único participante remoto informado",
+                        "confirmado": certo, "evidencia": "único participante remoto informado"
+                        + ("" if certo else " (depende de quem é \"Você\")"),
                         "fatia": round(tempo.get(r, 0) / total, 3)})
         else:
             out.append({"rotulo": r, "nome": None, "origem": None, "confirmado": False,
@@ -361,6 +368,17 @@ def lacunas(ata):
 
 
 # ── montagem ─────────────────────────────────────────────────────────────────
+def _voce_a_confirmar(sessao):
+    """Evidência de "Você" ainda não confirmado (só no áudio do celular); None = certo."""
+    m = getattr(sessao, "m", {}) or {}
+    if m.get("origem") != "celular":
+        return None
+    cel = m.get("celular") or {}
+    if cel.get("voce_confirmado"):
+        return None
+    return cel.get("evidencia") or "estimado pela voz no áudio do celular"
+
+
 def base(sessao, segs, meu_nome):
     m = sessao.m
     dur = max((s["end"] for s in segs), default=0)
@@ -372,7 +390,8 @@ def base(sessao, segs, meu_nome):
         "projeto": m.get("projeto") or None,
         "data": m.get("inicio") or m.get("criado"),
         "duracao_min": round(max(dur, sessao.duracao_s()) / 60),
-        "participantes": participantes_iniciais(segs, meu_nome, sessao.participantes_remotos()),
+        "participantes": participantes_iniciais(segs, meu_nome, sessao.participantes_remotos(),
+                                                _voce_a_confirmar(sessao)),
         "contexto": None, "resumo": None, "temas": [],
         "decisoes": [], "encaminhamentos": [], "perguntas_abertas": [], "riscos": [],
         "valores": [], "escopo": [], "por_tema": [],

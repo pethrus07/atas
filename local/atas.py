@@ -16,6 +16,10 @@ Atas — linha de comando. É a interface do /ata (Claude) e o plano B da janela
     python atas.py publicar <id>          publica (só cliente; decisão do Pedro) [--forcar]
     python atas.py tipo <id> <tipo>       corrige/confirma o tipo [--projeto P]; interno tira do ar
     python atas.py formato <id> <f>       formato da reunião de cliente: descoberta, demo, alinhamento, nenhum
+    python atas.py importar <áudio>       reunião presencial gravada no celular --titulo T [--tipo] [--projeto]
+                                          [--participantes "A,B"] [--formato F] [--data "AAAA-MM-DD HH:MM"]
+    python atas.py vigiar <pasta>         importa os áudios novos da pasta (sem duplicar) [--continuo]
+    python atas.py voz-referencia [<id>]  refaz a amostra da sua voz que acha "Você" no áudio do celular
     python atas.py legado-proteger        plano para as atas da v1 no ar [--aplicar]
     python atas.py despublicar <id>       apaga a página do Worker
     python atas.py publicadas             o que está no Worker
@@ -93,8 +97,16 @@ def c_mostrar(a):
     extra = ""
     if s.tipo == "cliente":
         extra += f" · formato {s.m.get('formato') or '— (não informado)'}"
+    if s.celular:
+        cel = s.m.get("celular") or {}
+        extra += (" · áudio do celular, quem é \"Você\": "
+                  + ("confirmado" if cel.get("voce_confirmado") else
+                     f"A CONFIRMAR ({cel.get('evidencia') or 'ainda não processado'})"))
     print(f"# {s.m.get('titulo')}\n{s.resumo_curto()} · {s.m.get('projeto') or 'sem projeto'}"
           f" · estado {s.m.get('estado')}{extra}\npasta: {s.pasta}\n")
+    if s.tipo == _sessao.TIPO_PENDENTE:
+        print("TIPO PENDENTE: escolha com `atas.py tipo <id> <cliente|parresia|carreira|pessoal>` "
+              "(até lá não há entregável, publicação nem avaliação)\n")
     if at:
         from render import markdown
         md = markdown(at, segs)
@@ -178,6 +190,8 @@ def c_falantes(a):
             sys.exit(f"use 'Rótulo=Nome': {par!r}")
         r, n = par.split("=", 1)
         pares[r.strip()] = n.strip()
+    if s.celular and _confirmar_voce_por_pares(s, pares):
+        segs, at = _ata_de(s)                    # os rótulos podem ter trocado
     rotulos = {p["rotulo"] for p in at["participantes"]}
     for r in pares:
         if r not in rotulos:
@@ -187,11 +201,52 @@ def c_falantes(a):
             p.update({"nome": pares[p["rotulo"]], "origem": "pedro", "confirmado": True})
     _sessao.escrever_json(s.caminho("ata.json"), at)
     _reaplicar(s, a)
+    _depois_de_confirmar_voce(s)
+
+
+def _confirmar_voce_por_pares(s, pares):
+    """Áudio do celular: "Participante 2=Você" (ou =Pedro) diz qual rótulo é o Pedro; "Você=Você"
+    confirma o palpite. Tira esses pares de `pares` e grava a confirmação. Devolve True se tratou."""
+    eu = {"você", "voce", _config.carregar().get("meu_nome", "Pedro").lower()}
+    alvo = [r for r, n in pares.items() if n.lower() in eu]
+    if not alvo:
+        return False
+    if len(alvo) > 1:
+        sys.exit("só um rótulo pode ser você: " + ", ".join(alvo))
+    import celular
+    r = alvo[0]
+    del pares[r]
+    try:
+        mudou = celular.confirmar_voce(s, None if r == "Você" else r,
+                                       _config.carregar().get("meu_nome", "Pedro"))
+    except ValueError as e:
+        sys.exit(str(e))
+    print(f"você = {r}" + (" (rótulos trocados na transcrição)" if mudou else " (confirmado)"))
+    if mudou and (_sessao.ler_json(s.caminho("ata.json")) or {}).get("status") in ("estruturada", "revisada"):
+        print("  a ata foi montada com o palpite antigo: refaça com "
+              f"`atas.py processar {s.id} --forcar estrutura,avaliacao`")
+    return True
+
+
+def _depois_de_confirmar_voce(s):
+    """Com "Você" confirmado, o Raio-X que ficou pendente roda agora."""
+    s = Sessao.abrir(s.pasta)
+    if s.celular and (s.m.get("celular") or {}).get("voce_confirmado") \
+            and s.status_etapa("raio_x") == "pendente":
+        raio_x(s)
+        print("  Raio-X da fala calculado (atas.py fala <id> mostra a leitura)")
 
 
 def c_confirmar(a):
     s = achar(a.id)
     segs, at = _ata_de(s)
+    if s.celular and not (s.m.get("celular") or {}).get("voce_confirmado"):
+        import celular
+        if not any(x["speaker"] == "Você" for x in segs):
+            sys.exit("áudio do celular sem \"Você\": diga qual rótulo é você com "
+                     f"`atas.py falantes {s.id} \"Participante N=Você\"`")
+        celular.confirmar_voce(s, None, _config.carregar().get("meu_nome", "Pedro"))
+        segs, at = _ata_de(s)
     for p in at["participantes"]:
         if p.get("nome"):
             p["confirmado"] = True
@@ -199,6 +254,7 @@ def c_confirmar(a):
     at["revisado"] = {"em": _sessao.agora_iso(), "por": "pedro"}
     _sessao.escrever_json(s.caminho("ata.json"), at)
     _reaplicar(s, a)
+    _depois_de_confirmar_voce(s)
 
 
 def _reaplicar(s, a):
@@ -298,6 +354,14 @@ def c_tipo(a):
     print(f"{s.id}: {antes} -> {a.tipo}" + (f" · projeto {s.m['projeto']}" if a.projeto else ""))
     if _sessao.ler_json(s.caminho("ata.json")):
         pipeline.reaplicar(s)                    # tipo interno tira a página do ar
+    if antes == _sessao.TIPO_PENDENTE:
+        # áudio do celular importado sem tipo: o Raio-X muda a leitura (a fatia depende do tipo)
+        if s.status_etapa("raio_x") == "ok":
+            raio_x(s)
+        if a.tipo in ("cliente", "parresia"):
+            print(f"  avaliação interna: `atas.py processar {s.id} --forcar avaliacao`")
+        if a.tipo == "cliente":
+            print("  entregável pronto para revisar; publicar continua sendo decisão sua (`publicar`)")
 
 
 def c_formato(a):
@@ -390,7 +454,7 @@ def raio_x(s, cfg=None, log=print):
     if not segs:
         raise SystemExit("esta sessão não tem transcrição")
     import avaliar
-    mic = s.mic_pcm if s.mic_pcm.exists() else s.caminho("audio") / "mic.opus"
+    mic = s.audio_da_voz()                       # .pcm, mic.opus ou o arquivo único do celular
     av = avaliar.mais_recente(s)                 # a página da reunião traz a postura da avaliação
     if av and not av.with_suffix(".html").exists():
         avaliar.escrever_html(s, av)
@@ -549,10 +613,92 @@ def c_calibrar(a):
     tmp.unlink(missing_ok=True)
 
 
-def c_importar(a):
+def c_importar_legado(a):
     import legado
     feitos = legado.importar()
     print(f"{len(feitos)} ata(s) importada(s)")
+
+
+def _data_arg(txt):
+    import datetime as _dt
+    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M", "%Y-%m-%d_%H%M", "%Y-%m-%d"):
+        try:
+            return _dt.datetime.strptime(txt.strip(), fmt)
+        except ValueError:
+            pass
+    sys.exit(f"data inválida: {txt!r} (use \"AAAA-MM-DD HH:MM\")")
+
+
+def _resumo_importada(s):
+    cel = s.m.get("celular") or {}
+    print(f"\n{s.id} → {s.m.get('estado')} · tipo {s.tipo}")
+    if s.tipo == _sessao.TIPO_PENDENTE:
+        print(f"  tipo PENDENTE: `atas.py tipo {s.id} <cliente|parresia|carreira|pessoal>`")
+    print(f"  quem é você: {cel.get('evidencia') or '—'}")
+    print("  feche no Claude com /ata (confirma quem é você, os nomes e o tipo)")
+
+
+def c_importar_celular(a):
+    """Reunião presencial gravada no celular: um arquivo de áudio → uma sessão (ver celular.py)."""
+    import celular
+    if a.formato and a.formato not in _sessao.FORMATOS:
+        sys.exit(f"formato inválido: use {', '.join(_sessao.FORMATOS)}")
+    if a.tipo and a.tipo not in TIPOS:
+        sys.exit(f"tipo inválido: use {', '.join(TIPOS)} (sem --tipo a reunião fica pendente)")
+    part = [p.strip() for p in (a.participantes or "").split(",") if p.strip()]
+    try:
+        s = celular.importar(a.arquivo, titulo=a.titulo, tipo=a.tipo, projeto=a.projeto or "",
+                             participantes=part, formato=a.formato,
+                             quando=_data_arg(a.data) if a.data else None,
+                             processar=not a.sem_processar, log=print, forcar=a.forcar,
+                             apagar_origem=a.apagar_origem)
+    except (ValueError, FileNotFoundError, RuntimeError) as e:
+        sys.exit(f"não importou: {e}")
+    if a.sem_processar:
+        print(f"{s.id} criada; processe com `atas.py processar {s.id}`")
+        return
+    _imprimir_etapas(s, s.m.get("etapas") or {})
+    _resumo_importada(s)
+
+
+def c_vigiar(a):
+    """Importa os áudios novos de uma pasta (ex.: a pasta Atas-celular do OneDrive). Uma passada,
+    ou --continuo (repete a cada --intervalo s até Ctrl+C). Nada é agendado no Windows."""
+    import time
+    import celular
+    if a.tipo and a.tipo not in TIPOS:
+        sys.exit(f"tipo inválido: use {', '.join(TIPOS)} (sem --tipo cada reunião fica pendente)")
+    while True:
+        try:
+            feitos = celular.vigiar(a.pasta, tipo=a.tipo, projeto=a.projeto or "",
+                                    processar=not a.sem_processar, log=print,
+                                    apagar_origem=a.apagar_origem)
+        except FileNotFoundError as e:
+            sys.exit(str(e))
+        novos = [(arq, r) for arq, r in feitos if not r.startswith(("falhou", "ainda"))]
+        for arq, r in feitos:
+            print(f"  {arq.name}: {r}")
+        if novos and not a.sem_processar:
+            for _arq, sid in novos:
+                _resumo_importada(Sessao.abrir(sid))
+        if not a.continuo:
+            print(f"{len(novos)} reunião(ões) importada(s) de {a.pasta}")
+            return
+        try:
+            time.sleep(a.intervalo)
+        except KeyboardInterrupt:
+            return
+
+
+def c_voz_referencia(a):
+    """Refaz a amostra da voz do Pedro (o canal do microfone de uma reunião do Atas)."""
+    import celular
+    s = achar(a.id) if a.id else None
+    try:
+        p = celular.criar_referencia(s)
+    except RuntimeError as e:
+        sys.exit(str(e))
+    print(f"{p} (fora do git; é a sua voz, fica só nesta máquina)")
 
 
 def c_limpar(a):
@@ -679,7 +825,31 @@ def main(argv=None):
     p.add_argument("id")
     p.add_argument("--limiares", default="0.5,0.6,0.7,0.8,0.9,0.95")
     p.set_defaults(fn=c_calibrar)
-    sub.add_parser("importar-legado").set_defaults(fn=c_importar)
+    sub.add_parser("importar-legado").set_defaults(fn=c_importar_legado)
+    p = sub.add_parser("importar", help="reunião presencial gravada no celular (um arquivo de áudio)")
+    p.add_argument("arquivo")
+    p.add_argument("--titulo")
+    p.add_argument("--tipo", help="cliente, parresia, carreira ou pessoal; sem ele = pendente")
+    p.add_argument("--projeto")
+    p.add_argument("--participantes", help='quem mais estava na sala, sem você: "Ana,Breno"')
+    p.add_argument("--formato", help="descoberta, demo ou alinhamento (cliente)")
+    p.add_argument("--data", help='início da reunião, "AAAA-MM-DD HH:MM" (padrão: nome ou data do arquivo)')
+    p.add_argument("--sem-processar", action="store_true", help="só cria a sessão")
+    p.add_argument("--forcar", action="store_true", help="importar de novo um arquivo já importado")
+    p.add_argument("--apagar-origem", action="store_true", help="apaga o arquivo de origem depois de conferir a cópia")
+    p.set_defaults(fn=c_importar_celular)
+    p = sub.add_parser("vigiar", help="importa os áudios novos de uma pasta (sem duplicar)")
+    p.add_argument("pasta")
+    p.add_argument("--tipo", help="para pasta de um tipo só; sem ele cada reunião fica pendente")
+    p.add_argument("--projeto")
+    p.add_argument("--continuo", action="store_true", help="fica vigiando até Ctrl+C")
+    p.add_argument("--intervalo", type=int, default=120, help="segundos entre passadas (--continuo)")
+    p.add_argument("--sem-processar", action="store_true")
+    p.add_argument("--apagar-origem", action="store_true")
+    p.set_defaults(fn=c_vigiar)
+    p = sub.add_parser("voz-referencia", help="refaz a amostra da sua voz (acha \"Você\" no áudio do celular)")
+    p.add_argument("id", nargs="?")
+    p.set_defaults(fn=c_voz_referencia)
     sub.add_parser("limpar-audio").set_defaults(fn=c_limpar)
     a = ap.parse_args(argv)
     a.fn(a)
