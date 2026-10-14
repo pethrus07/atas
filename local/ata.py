@@ -204,6 +204,37 @@ _DIAS_SEMANA = {"segunda": 0, "terca": 1, "quarta": 2, "quinta": 3, "sexta": 4, 
                 "domingo": 6}
 _NUMEROS = {"um": 1, "uma": 1, "dois": 2, "duas": 2, "tres": 3, "quatro": 4, "cinco": 5, "seis": 6,
             "sete": 7, "oito": 8, "nove": 9, "dez": 10, "quinze": 15, "vinte": 20, "trinta": 30}
+_NUM = r"(?:\d{1,3}|" + "|".join(_NUMEROS) + r")"
+
+# prazo relativo ("15 dias", "uns 4 5 dias", "duas semanas"), sobre o texto já passado por norm().
+# Usado pela auditoria (_data_coerente) e pelo Raio-X (expressao_de_prazo, 14/10/2026).
+_RE_RELATIVO = re.compile(r"\b(\d{1,3}|" + "|".join(_NUMEROS) + r")(?: (?:a |ou )?(\d{1,3}|"
+                          + "|".join(_NUMEROS) + r"))? (dia|dias|semana|semanas)\b")
+_SEMANA = "|".join(_DIAS_SEMANA)
+_RE_PRAZO = re.compile(
+    r"\b(?:hoje|amanha|depois de amanha"
+    r"|(?:semana|mes) que vem|proxim[ao] (?:semana|mes|" + _SEMANA + r")"
+    r"|(?:fim|final) d[oae] (?:dia|semana|mes|tarde|manha)|ate o (?:fim|final)"
+    r"|(?:" + _SEMANA + r") feira"
+    r"|(?:ate|nessa|nesta|essa|esta|no|na) (?:" + _SEMANA + r")"
+    r"(?! (?:versao|vez|parte|etapa|fase|opcao|tela|pagina|reuniao|coisa|pergunta))"
+    r"|dia \d{1,2}|ate (?:o )?dia " + _NUM +
+    r"|(?:antes|depois) do almoco|(?:hoje|amanha) (?:a|de) (?:tarde|noite|manha)"
+    r"|(?:em|daqui a|daqui|ate|uns|umas|dentro de) " + _NUM + r"(?: (?:a |ou )?" + _NUM + r")?"
+    r" (?:dia|dias|semana|semanas|hora|horas|mes|meses)"
+    r"|(?:essa|esta|nessa|nesta) semana|(?:esse|este|nesse|neste) mes)\b")
+_RE_DATA_CHEIA = re.compile(r"(?<!\d)\d{1,2}/\d{1,2}(?:/\d{2,4})?(?!\d)")
+
+
+def expressao_de_prazo(texto):
+    """A expressão de prazo dita no texto ("até sexta", "amanhã", "em 15 dias", "dia 10", "15/10"),
+    ou None. Só ACHA a expressão; converter em data e conferir é com _data_coerente. O Raio-X usa
+    para medir compromisso com prazo (14/10/2026)."""
+    m = _RE_DATA_CHEIA.search(str(texto or ""))
+    if m:
+        return m.group(0)
+    m = _RE_PRAZO.search(norm(texto))
+    return m.group(0) if m else None
 
 
 def _data_coerente(iso, dito, data_reuniao):
@@ -225,8 +256,7 @@ def _data_coerente(iso, dito, data_reuniao):
     dias = (d - base).days if base else 0
     # prazo relativo: "15 dias", "uns 4 5 dias", "quinze dias", "duas semanas" (v2.1). Conta da
     # data da reunião; numa faixa ("4 5 dias"), vale o maior; tolerância de 1 dia para cada lado
-    rel = re.search(r"\b(\d{1,3}|" + "|".join(_NUMEROS) + r")(?: (?:a |ou )?(\d{1,3}|"
-                    + "|".join(_NUMEROS) + r"))? (dia|dias|semana|semanas)\b", n)
+    rel = _RE_RELATIVO.search(n)
     if rel and base:
         num = lambda s: int(s) if s and s.isdigit() else _NUMEROS.get(s)
         qtd = max(x for x in (num(rel.group(1)), num(rel.group(2))) if x is not None)
