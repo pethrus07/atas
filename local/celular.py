@@ -144,9 +144,10 @@ def ja_importados(raiz=None):
 # ── importar ──────────────────────────────────────────────────────────────────
 def importar(arquivo, titulo=None, tipo=None, projeto="", participantes=None, formato=None,
              quando=None, raiz=None, processar=True, cfg=None, log=print, forcar=False,
-             apagar_origem=False):
+             apagar_origem=False, marcas=None):
     """Cria a sessão a partir de um arquivo de áudio e (por padrão) roda o pipeline.
-    Devolve a Sessao. Levanta ValueError se o arquivo já foi importado (sem `forcar`)."""
+    Devolve a Sessao. Levanta ValueError se o arquivo já foi importado (sem `forcar`).
+    `marcas`: momentos marcados, em segundos desde o início do áudio (`--marcas "12:30,40:10"`)."""
     arquivo = pathlib.Path(arquivo)
     if not arquivo.is_file():
         raise FileNotFoundError(f"arquivo não encontrado: {arquivo}")
@@ -188,6 +189,15 @@ def importar(arquivo, titulo=None, tipo=None, projeto="", participantes=None, fo
         "celular": {"voce_confirmado": False},
     })
     s.m["audio"]["duracao_s"] = round(dur, 1)
+    if marcas:
+        import marcas as _marcas
+        fora = [t for t in marcas if t > dur + 1]
+        if fora:
+            shutil.rmtree(s.pasta, ignore_errors=True)
+            raise ValueError(f"marca depois do fim do áudio ({dur / 60:.0f} min): "
+                             + ", ".join(f"{int(t // 60)}:{int(t % 60):02d}" for t in fora))
+        for t in marcas:
+            _marcas.adicionar(s, t, "celular", salvar=False)
     if tipo == TIPO_PENDENTE:
         s.m["classificacao"] = "pendente"
     s.salvar()

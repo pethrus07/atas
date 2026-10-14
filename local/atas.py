@@ -16,8 +16,11 @@ Atas — linha de comando. É a interface do /ata (Claude) e o plano B da janela
     python atas.py publicar <id>          publica (só cliente; decisão do Pedro) [--forcar]
     python atas.py tipo <id> <tipo>       corrige/confirma o tipo [--projeto P]; interno tira do ar
     python atas.py formato <id> <f>       formato da reunião de cliente: descoberta, demo, alinhamento, nenhum
+    python atas.py marcar <id> <mm:ss>... marca momentos depois da reunião [--remover]
+    python atas.py marcas <id>            os momentos marcados e o que a ata achou em cada um
     python atas.py importar <áudio>       reunião presencial gravada no celular --titulo T [--tipo] [--projeto]
                                           [--participantes "A,B"] [--formato F] [--data "AAAA-MM-DD HH:MM"]
+                                          [--marcas "12:30,40:10"]
     python atas.py vigiar <pasta>         importa os áudios novos da pasta (sem duplicar) [--continuo]
     python atas.py voz-referencia [<id>]  refaz a amostra da sua voz que acha "Você" no áudio do celular
     python atas.py legado-proteger        plano para as atas da v1 no ar [--aplicar]
@@ -386,6 +389,62 @@ def c_formato(a):
         print("  Raio-X refeito com o formato novo (atas.py fala <id> mostra a leitura)")
 
 
+def c_marcar(a):
+    """Marca momentos depois da reunião ("lembrei que em 40:10 ele falou do prazo"). A ata passa a
+    tratar o trecho na próxima estrutura; até lá a marca aparece como pendente."""
+    import marcas
+    s = achar(a.id)
+    if s.m.get("estado") == "gravando" and not s.orfa():
+        sys.exit("esta reunião está sendo gravada agora: marque pela janela (atalho ou botão Marcar)")
+    try:
+        horarios = marcas.ler_horarios(a.horarios)
+    except ValueError as e:
+        sys.exit(str(e))
+    dur = s.duracao_s()
+    for t in horarios:
+        if dur and t > dur + 1:
+            sys.exit(f"{_ata.fmt_t(t)} passa do fim da reunião ({_ata.fmt_t(dur)})")
+    if a.remover:
+        antes = marcas.lista(s)
+        s.m["marcas"] = [m for m in antes if not any(abs(m["t"] - t) < marcas.REPIQUE_S for t in horarios)]
+        s.salvar()
+        print(f"{len(antes) - len(s.m['marcas'])} marca(s) removida(s)")
+    else:
+        for t in horarios:
+            m = marcas.adicionar(s, t, "depois")
+            print(f"  {_ata.fmt_t(t)} " + ("marcado" if m else "já havia uma marca aí (±2 s)"))
+    _imprimir_marcas(s)
+    if _sessao.ler_json(s.caminho("ata.json")):
+        print(f"\npara a ata ler o trecho: `atas.py processar {s.id} --forcar estrutura`")
+
+
+def _imprimir_marcas(s):
+    import marcas
+    _, at = _ata_de(s)
+    mom = {x.get("marca_t"): x for x in (at or {}).get("momentos") or []}
+    ids = marcas.identificadas(marcas.lista(s))
+    if not ids:
+        print("nenhum momento marcado")
+        return
+    print(f"{len(ids)} momento(s) marcado(s) · trecho de {marcas.JANELA_ANTES_S} s antes a "
+          f"{marcas.JANELA_DEPOIS_S} s depois")
+    from render import texto_momento
+    for mid, m in ids:
+        mo = mom.get(round(m["t"], 1))
+        if mo is None:
+            o_que = "ainda não está na ata"
+        else:
+            frase, vazio = texto_momento(mo)
+            o_que = (f"{frase} — \"{mo['citacao']}\" [{mo.get('t')}]" if frase else vazio)
+            if mo.get("itens"):
+                o_que += " · na ata: " + ", ".join(mo["itens"])
+        print(f"  {mid}  {_ata.fmt_t(m['t']):>8}  ({m.get('origem')})  {o_que}")
+
+
+def c_marcas(a):
+    _imprimir_marcas(achar(a.id))
+
+
 def c_legado_proteger(a):
     """As atas da v1 estão no Worker sem senha e sem prazo. Sem --aplicar só mostra o plano:
     interna (Parresia/carreira/pessoal) -> apagar; cliente -> senha nova + expiração."""
@@ -651,8 +710,13 @@ def c_importar_celular(a):
         sys.exit(f"tipo inválido: use {', '.join(TIPOS)} (sem --tipo a reunião fica pendente)")
     part = [p.strip() for p in (a.participantes or "").split(",") if p.strip()]
     try:
+        import marcas
+        mk = marcas.ler_horarios([a.marcas]) if a.marcas else []
+    except ValueError as e:
+        sys.exit(str(e))
+    try:
         s = celular.importar(a.arquivo, titulo=a.titulo, tipo=a.tipo, projeto=a.projeto or "",
-                             participantes=part, formato=a.formato,
+                             participantes=part, formato=a.formato, marcas=mk,
                              quando=_data_arg(a.data) if a.data else None,
                              processar=not a.sem_processar, log=print, forcar=a.forcar,
                              apagar_origem=a.apagar_origem)
@@ -908,6 +972,14 @@ def main(argv=None):
     p.add_argument("formato")
     p.add_argument("--sem-raio-x", action="store_true", help="não refazer o Raio-X agora")
     p.set_defaults(fn=c_formato)
+    p = sub.add_parser("marcar", help="marca momentos depois da reunião: marcar <id> 12:30 40:10")
+    p.add_argument("id")
+    p.add_argument("horarios", nargs="+", help="mm:ss ou h:mm:ss (vírgula também separa)")
+    p.add_argument("--remover", action="store_true", help="tira as marcas desses horários (±2 s)")
+    p.set_defaults(fn=c_marcar)
+    p = sub.add_parser("marcas", help="lista os momentos marcados e o que a ata achou em cada um")
+    p.add_argument("id", nargs="?", default="ultima")
+    p.set_defaults(fn=c_marcas)
     p = sub.add_parser("legado-proteger")
     p.add_argument("--aplicar", action="store_true")
     p.set_defaults(fn=c_legado_proteger)
@@ -937,6 +1009,7 @@ def main(argv=None):
     p.add_argument("--participantes", help='quem mais estava na sala, sem você: "Ana,Breno"')
     p.add_argument("--formato", help="descoberta, demo ou alinhamento (cliente)")
     p.add_argument("--data", help='início da reunião, "AAAA-MM-DD HH:MM" (padrão: nome ou data do arquivo)')
+    p.add_argument("--marcas", help='momentos marcados no áudio, mm:ss separados por vírgula: "12:30,40:10"')
     p.add_argument("--sem-processar", action="store_true", help="só cria a sessão")
     p.add_argument("--forcar", action="store_true", help="importar de novo um arquivo já importado")
     p.add_argument("--apagar-origem", action="store_true", help="apaga o arquivo de origem depois de conferir a cópia")
