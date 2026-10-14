@@ -692,3 +692,85 @@ do Pedro: fica em `local/models/`, fora do git.
 - Sem participantes informados, o número de vozes vem do limiar + teto (§6), que erra mais.
 - Um rótulo pode misturar o Pedro com outra pessoa; a confirmação no /ata é por rótulo, não por
   fala.
+
+## 19 · Modo treino (14/10/2026)
+
+Pedido do Pedro: "gosto do modo treino para reunião". Ele grava de 2 a 5 minutos **sozinho** e recebe
+o Raio-X de monólogo e um retorno curto do Claude. Tudo em `local/treino.py`; a janela em
+`app.py::treino_*`; o CLI em `atas.py` (`treinar`, `treino <áudio>`, `treinos`).
+
+**Dois tipos.**
+- `reuniao`: ensaiar uma fala de reunião de cliente. O Claude olha: ideia central nos primeiros ~20 s;
+  problema → o que muda → próximo passo; **promete resultado, não método**; compromisso com dono e
+  prazo; perguntas abertas (se houver descoberta); certeza absoluta/promessa no reflexo.
+- `tema`: explicar um assunto de estudo (nota de `sinapse/02-ESTUDO` ou texto livre no assunto). Com
+  nota, o Claude confere cada afirmação contra ela (`confere` · `diverge` · `fora_da_nota`) e diz se a
+  explicação passou por ideia → problema → mecanismo → exemplo.
+- Em ambos: **1 coisa para manter e 1 para mudar**, tom de colega. O Claude não comenta velocidade,
+  pausas nem muletas (isso é medido).
+
+**Fluxo.** `record.escolher_so_microfone` → `Gravador` com `loop=None` (um canal) → `mic.pcm` na pasta
+do treino → `treino.transcrever` (Whisper com `word_timestamps`, uma passada, sem diarização) →
+`medir` → `comparar` → `ler` → `retorno_claude` (`estruturar.chamar_claude` com `esquema(tipo)`, JSON
+Schema fechado, `additionalProperties: false`) → `auditar_retorno` → `resultado.md`/`.html` →
+`treinos.jsonl` → `audio.aposentar_pcm` (Opus conferido). `atas.py treino <arquivo>` decodifica
+qualquer áudio (PyAV) para o `mic.pcm` do treino e segue o mesmo caminho; a origem não é tocada.
+
+**O que mede** (só o que faz sentido em monólogo; fatia de fala, turnos e interrupção ficam fora):
+
+| Medida | Como | Régua | Fonte |
+|---|---|---|---|
+| Ritmo (elocução) | sílabas (`analise_fala.silabas`) ÷ tempo da 1ª à última palavra | alvo escolhível: 4,8 padrão · 4,5 leitura ritmada · 5,0 roteiro; "no alvo" até +0,3; norma 4,2 ± 0,7 | RBCS/UFPB 2019; pesquisa 14/10 (seção E) |
+| Articulação | sílabas ÷ (tempo de fala − pausas ≥0,5 s) | só informa, junto com o ritmo | — |
+| Pausas | silêncio ≥0,5 s **entre** palavras (tempos do Whisper), por minuto e % do tempo | 8 a 15 por minuto (uma por frase) | referência prática, **sem norma publicada** |
+| Palavras entre pausas | mediana das palavras entre duas pausas | a mediana dele nos treinos anteriores | — |
+| Muleta pura e "aí" | `analise_fala.analisar`/`postura` nos trechos | muleta: mediana das reuniões −20% (a mesma do §17); "aí" ≤20 | §17 |
+| Entonação | `analise_fala.voz` no áudio do microfone | ≥3 semitons para apresentar | Arantes (Abralin) |
+| Duração | da 1ª à última palavra contra o alvo | ±20% | escolha dele |
+| Trecho mais corrido | janela de ~10 s com mais sílabas/s | — (botão "Ouvir") | — |
+
+Com menos de 150 palavras, os 4 números principais levam "fala curta: leia com cautela".
+
+**Comparação.** Cada número sai contra o **último treino do mesmo tipo** (`treinos.jsonl`) e contra a
+**mediana das últimas 5 reuniões reais** com ≥1.000 palavras (`historico.jsonl`, a mesma base do
+§17). A distância entre treino e reunião é a medida de transferência. Pausas e palavras entre pausas
+não existem nas reuniões (o Raio-X delas não guarda o tempo de cada palavra).
+
+**Auditoria do retorno.** A mesma da ata: a `citacao` tem de estar numa frase da transcrição
+(`ata._achar`; o `t` é corrigido para o da frase); citação não achada vira `verificado: false`, perde
+a citação e guarda `citacao_inventada`. No tema, o `trecho_nota` tem de estar literalmente na nota
+(`ata._contem`) → `nota_verificada`. As "linhas" que o Claude cita são **frases** (corte no ponto
+final do Whisper ou em pausa de 2 s): juntar por pausa daria uma fala só de 3 minutos.
+Se o `claude` falhar, o resultado sai só com as métricas e diz o motivo (`retorno_erro`).
+
+**Isolamento** (coberto por `tests/test_treino.py`):
+- pasta `atas-salvas/treinos/<id>/` com manifesto **`treino.json`** (classe `Treino(Sessao)` que só
+  troca o nome do arquivo): `sessao.listar()`, retomar, retenção das reuniões e o importador do
+  celular não enxergam treino; `tipo: "treino"` faz `publicar()` recusar por garantia;
+- `fala-analise/treinos.jsonl` é o único histórico escrito; o `historico.jsonl` é só **lido**;
+  nenhuma página de Raio-X, painel, nota `fala-raio-x.md`, avaliação, ata ou upload;
+- o vault é só lido (a nota de estudo). Teste com `SINAPSE_VAULT` numa pasta temporária: o hash de
+  todos os arquivos do vault e do `fala-analise/` fica igual, menos o `treinos.jsonl` novo;
+- retenção: `audio/` de treino apagado depois de `audio_reter_dias` (30), salvo
+  `atas.py treinos --manter <id>`.
+
+**Janela** (regra de UI: pouca informação, muito respiro). "Treinar" é um link de texto no canto do
+"Nova reunião" (não muda o fluxo da reunião). Três telas: **Treino** (tipo, assunto opcional,
+duração; "Mais opções": alvo e nota) → **Treinando** (tempo, alvo, nível do microfone; passou do alvo
+= "feche a ideia", sem cortar) → **Seu treino** (4 números com meia linha de leitura e a comparação,
+vermelho só no que está fora; manter e mudar; "Ouvir o trecho mais rápido"; "Ver tudo" abre
+`resultado.html` no tema RYZE). Links sem borda (`App._link`). Fotos conferidas em 14/10.
+
+**Medido em 14/10/2026** (vozes Piper pt-BR, frases separadas por silêncio conhecido de 0,8 s):
+as **7 de 7** pausas achadas pelos tempos do Whisper, medidas entre 0,60 e 1,00 s. Retorno real do
+`claude -p`: ~21 s e US$ 0,07 por treino de 45 s; no ensaio de proposta apontou o trecho de método
+("vou configurar o servidor…") e a promessa no reflexo; no tema "CAP" achou a afirmação que contradiz
+a nota ("abrir mão da partição") com o trecho da nota.
+
+**Limites conhecidos.**
+- O Whisper encurta a pausa em ~0,2 s (0,8 s real → 0,6 s medido): uma pausa real de 0,5–0,7 s
+  pode não contar; pausa respiratória curta nunca conta.
+- A faixa de pausas (8 a 15/min) é heurística sem norma; leia junto com o ritmo e a comparação.
+- Em 3 min (~450 palavras) cada muleta pesa ~2 por mil: a meta vale como direção, não como prova.
+- Calibrado em voz sintética; falta o primeiro treino real do Pedro com o fone.
+- Sem indicador de ritmo ao vivo (ver MELHORIAS 19).

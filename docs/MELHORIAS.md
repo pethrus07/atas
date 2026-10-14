@@ -26,6 +26,7 @@ Valter, sessão `2026-10-05_2303_alinhamento-valter`), conferida item a item con
 | 16 | Formato da reunião de cliente (descoberta/demo/alinhamento) na janela, opcional e só em cliente; `atas.py formato`; o /ata propõe | ✅ 14/10 | `app.py::inicio`, `atas.py::c_formato`, `tests/test_formato.py` |
 | 17 | Recalcular o histórico real do Raio-X com as regras v3 | ✅ 14/10 · 4 reuniões, backup `historico.jsonl.bak-2026-10-14`, vault intocado | `ARQUITETURA.md` §17 |
 | 18 | Reunião presencial gravada no celular: `importar`, `vigiar`, "Você" pela amostra de voz e a confirmar, tipo pendente | ✅ 14/10 · ⏳ falta calibrar em áudio de celular real | `celular.py`, `ARQUITETURA.md` §18, `tests/test_celular.py` |
+| 19 | Modo treino: ensaio sozinho (reunião ou explicar tema), só o microfone, Raio-X de monólogo (ritmo, pausas, muletas, entonação) contra o alvo, o último treino e as reuniões, retorno do Claude auditado; fora do Raio-X das reuniões e do vault | ✅ 14/10 · ⏳ falta o primeiro treino real e o ritmo ao vivo | `treino.py`, `app.py::treino_*`, `ARQUITETURA.md` §19, `tests/test_treino.py` |
 | — | Worker v2 no ar (sem ele, nenhuma ata é publicada; a de 05/10 está parada) | ⏳ o login do wrangler virou a conta pessoal | `worker/` |
 | — | Marcar trechos fora de pauta | ⏳ parcial: o prompt tira de resumo e itens; falta marcar na transcrição interna | — |
 
@@ -138,3 +139,18 @@ uma de 13 mil. Regras, fontes e limites em `ARQUITETURA.md` §17. Recalcular o h
   Pedro, números medidos e limites em `ARQUITETURA.md` §18.
   **Pendente:** calibrar os limiares (0,45 / margem 0,10) com a primeira reunião presencial real;
   testar o gravador do celular 10 min com a tela apagada antes dela.
+
+## 19. Modo treino (14/10/2026) · ✅
+Pedido do Pedro ("gosto do modo treino para reunião"). Janela: link "Treinar" → 3 telas. CLI:
+`treinar`, `treino <áudio>`, `treinos [--manter <id>]`. O que mede, réguas, isolamento e limites em
+`ARQUITETURA.md` §19. Conferido em 14/10 com voz sintética pt-BR (7 de 7 pausas achadas) e o
+`claude -p` real (US$ 0,07 e ~21 s por treino curto).
+**Pendente:**
+- **Primeiro treino real** com o fone: conferir se a faixa de pausas (8 a 15/min, heurística) e o
+  limiar de 0,5 s fazem sentido na voz dele (o Whisper encurta a pausa em ~0,2 s).
+- **Ritmo ao vivo** na tela "Treinando" (sílabas/s dos últimos ~20 s): ficou de fora de propósito. O
+  `ao_vivo.py` transcreve em janelas de 30 s com o modelo small e sem tempo por palavra; um indicador
+  confiável pede janela menor e `word_timestamps`, disputando a GPU com a gravação. Fazer depois de o
+  modo treino ser usado algumas vezes.
+- **Exercícios guiados** da pesquisa (leitura ritmada a 4,5 → roteiro de 3 tópicos a 5,0 → explicação
+  livre a 4,8): hoje o alvo é escolhido à mão em "Mais opções"; um texto de leitura pronto ajudaria.

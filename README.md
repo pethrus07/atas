@@ -69,10 +69,28 @@ Uma conversa sem chamada não passa pelo PC. Grave no celular e traga o arquivo:
 > **Consentimento (LGPD):** avise que está gravando. O áudio fica guardado **só nesta
 > máquina** por 30 dias (para reprocessar ou calibrar) e depois é apagado.
 
+## Modo treino (ensaiar sozinho)
+1. Na janela, **Treinar** (no canto do "Nova reunião"). Escolha **Reunião** (ensaiar abertura,
+   proposta, objeção, próximos passos) ou **Explicar um tema** (estudo), o assunto e a duração
+   (2 a 5 min). Em "Mais opções": o alvo de ritmo e a nota do Sinapse para conferir o conteúdo.
+2. **Começar**, fale, **Parar e ver o retorno**. Grava só o microfone.
+3. A tela mostra 4 números com leitura (ritmo, pausas, muletas, entonação) contra o alvo, o último
+   treino e as suas reuniões, e o retorno do Claude: **1 coisa para manter e 1 para mudar**.
+   "Ouvir o trecho mais rápido" toca os 10 s mais corridos; "Ver tudo" abre a página completa.
+
+Treino **nunca** entra no Raio-X das reuniões, no Sinapse nem em nada que sai da máquina.
+```powershell
+Invoke-Expression "$A treinar --tipo tema --assunto `"CAP`" --nota cap-e-consistencia"
+Invoke-Expression "$A treino `"C:\...\ensaio.m4a`" --assunto `"proposta`""   # áudio já gravado (celular)
+Invoke-Expression "$A treinos"                                                 # a evolução
+```
+Detalhe (o que mede, de onde vem cada régua, limites): [docs/ARQUITETURA.md §19](docs/ARQUITETURA.md).
+
 ## Onde fica cada coisa
 Uma pasta por reunião em `atas-salvas/<data>_<hora>_<título>/`: `sessao.json` (contexto e
 etapas), `transcricao.json`, **`ata.json`** (a ata canônica), `ata.md`/`.html`/`.pdf`,
-`entregavel.pdf` (cliente) e `audio/*.opus`. Tudo fora do git.
+`entregavel.pdf` (cliente) e `audio/*.opus`. Treinos em `atas-salvas/treinos/<id>/` (`treino.json`,
+`resultado.md`/`.html`, `audio/mic.opus`) e o histórico deles em `fala-analise/treinos.jsonl`. Tudo fora do git.
 
 ## Linha de comando
 Sempre com o Python do venv:
@@ -88,7 +106,7 @@ Todos os comandos: `atas.py --help` e [docs/ARQUITETURA.md §11](docs/ARQUITETUR
 
 ## Testes
 ```powershell
-C:\Users\olive\.venvs\faster-whisper\Scripts\python.exe -m pytest tests -q   # 108 testes (104 rápidos + 4 lentos, -m "not lento" pula), ~60 s
+C:\Users\olive\.venvs\faster-whisper\Scripts\python.exe -m pytest tests -q   # 121 testes (116 rápidos + 5 lentos, -m "not lento" pula), ~70 s
 cd worker; npm test                                                          # 10 testes do Worker (Miniflare)
 ```
 
