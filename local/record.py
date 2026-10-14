@@ -265,6 +265,13 @@ def escolher_dispositivos(mic_preferido=None):
     return {"mic": mic, "loop": loop, "avisos": [a for a in (aviso_mic, aviso_loop) if a]}
 
 
+def escolher_so_microfone(mic_preferido=None):
+    """Só o microfone, sem loopback (modo treino, 14/10/2026): o Pedro treina sozinho, não há chamada
+    para ouvir. O `Gravador` já grava um canal só quando `loop` é None."""
+    mic, aviso = _escolher_mic(mic_preferido)
+    return {"mic": mic, "loop": None, "avisos": [aviso] if aviso else []}
+
+
 def medir_niveis(disp, segundos=3.0):
     """Checagem de ~3 s antes de gravar: RMS de cada canal.
 

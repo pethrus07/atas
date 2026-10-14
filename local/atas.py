@@ -30,6 +30,10 @@ Atas — linha de comando. É a interface do /ata (Claude) e o plano B da janela
     python atas.py calibrar <id>          diarização com vários limiares no áudio guardado
     python atas.py importar-legado        traz as atas soltas de antes da v2
     python atas.py limpar-audio           aplica a retenção do áudio
+    python atas.py treinar                treino de fala sozinho (só o microfone) [--tipo reuniao|tema]
+                                          [--assunto A] [--nota <nome ou caminho>] [--duracao 180] [--alvo 4.8]
+    python atas.py treino <áudio>         analisa um treino já gravado (ex.: do celular), mesmas opções
+    python atas.py treinos                os treinos com a evolução [--tipo] [-n 20] [--manter <id>]
 
 <id> aceita o id completo, um prefixo único ou "ultima".
 """
@@ -746,6 +750,105 @@ def c_gravar(a):
     _imprimir_etapas(s, pipeline.processar(s, cfg, log=print))
 
 
+# ── modo treino (14/10/2026): ensaio sozinho, fora do Raio-X das reuniões ───
+def _opcoes_treino(a):
+    import treino
+    if a.tipo not in treino.TIPOS_TREINO:
+        sys.exit(f"tipo de treino inválido: use {', '.join(treino.TIPOS_TREINO)}")
+    nota = None
+    if a.nota:
+        try:
+            nota = str(treino.achar_nota(a.nota))
+        except FileNotFoundError as e:
+            sys.exit(str(e))
+    return dict(tipo=a.tipo, assunto=a.assunto or "", nota=nota, duracao_alvo_s=a.duracao, alvo=a.alvo)
+
+
+def _imprimir_treino(t):
+    import treino
+    print()
+    print("\n".join(treino.texto_resultado(t)))
+    print(f"\npasta: {t.pasta}")
+
+
+def c_treinar(a):
+    """Grava um treino pelo terminal (só o microfone) e mostra o resultado."""
+    import record
+    import treino
+    op = _opcoes_treino(a)
+    cfg = _config.carregar()
+    disp = record.escolher_so_microfone(cfg.get("microfone"))
+    t = treino.Treino.criar(op["tipo"], op["assunto"], op["nota"], op["duracao_alvo_s"], op["alvo"])
+    print(f"  Microfone: {disp['mic'].name}")
+    for av in disp["avisos"]:
+        print(f"  ⚠ {av}")
+    g = record.Gravador(t, disp)
+    g.iniciar()
+    try:
+        input(f"\n  >>> TREINANDO ({treino.TIPOS_TREINO[op['tipo']]}, alvo "
+              f"{op['duracao_alvo_s'] // 60}:{op['duracao_alvo_s'] % 60:02d}) — ENTER para parar.\n")
+    except (KeyboardInterrupt, EOFError):
+        pass
+    g.parar()
+    treino.analisar(t, cfg, log=print, claude=not a.sem_claude)
+    _imprimir_treino(t)
+
+
+def c_treino_arquivo(a):
+    """Um áudio já gravado vira treino (o arquivo de origem não é tocado)."""
+    import treino
+    op = _opcoes_treino(a)
+    cfg = _config.carregar()
+    try:
+        t = treino.importar(a.arquivo, op["tipo"], op["assunto"], op["nota"], op["duracao_alvo_s"], op["alvo"],
+                            quando=_data_arg(a.data) if a.data else None)
+    except (ValueError, FileNotFoundError) as e:
+        sys.exit(f"não importou: {e}")
+    treino.analisar(t, cfg, log=print, claude=not a.sem_claude)
+    _imprimir_treino(t)
+
+
+def c_treinos(a):
+    """Os treinos com a evolução: cada um contra o anterior do mesmo tipo e contra as reuniões."""
+    import treino
+    br = treino._br
+    if a.manter:
+        try:
+            t = treino.achar(a.manter)
+        except FileNotFoundError as e:
+            sys.exit(str(e))
+        t.m["manter"] = True
+        t.salvar()
+        print(f"{t.id}: o áudio fica guardado (fora da retenção de 30 dias)")
+        return
+    linhas = [r for r in treino.ler_treinos() if not a.tipo or r.get("tipo") == a.tipo][-a.n:]
+    if not linhas:
+        print("nenhum treino ainda: `atas.py treinar` ou o botão Treinar da janela")
+        return
+    print(f"{'data':16}  {'tipo':8} {'fala':>5} {'síl/s':>6} {'pausas/min':>10} {'muleta/1k':>9} {'entonação':>9}")
+    for r in linhas:
+        m = r.get("metrics") or {}
+        print(f"{str(r.get('data', ''))[:16].replace('T', ' '):16}  {r.get('tipo', ''):8} "
+              f"{treino._mmss(m.get('fala_s')):>5} {br(m.get('silabas_por_s'), 2):>6} "
+              f"{br(m.get('pausas_por_min'), 1):>10} {br(m.get('muleta_pura_por_1000'), 1):>9} "
+              f"{br(m.get('entonacao_st'), 1) + ' st' if m.get('entonacao_st') is not None else '—':>9}"
+              + ("" if r.get("retorno") else "  (sem Claude)"))
+    for tipo in dict.fromkeys(r.get("tipo") for r in linhas):
+        do_tipo = [r["metrics"] for r in linhas if r.get("tipo") == tipo and r.get("metrics")]
+        if len(do_tipo) >= 2:
+            p, u = do_tipo[0], do_tipo[-1]
+            print(f"\n{treino.TIPOS_TREINO.get(tipo, tipo)}: ritmo {br(p.get('silabas_por_s'), 2)} → "
+                  f"{br(u.get('silabas_por_s'), 2)} sílabas/s · pausas {br(p.get('pausas_por_min'), 1)} → "
+                  f"{br(u.get('pausas_por_min'), 1)}/min · muleta {br(p.get('muleta_pura_por_1000'), 1)} → "
+                  f"{br(u.get('muleta_pura_por_1000'), 1)}/1k ({len(do_tipo)} treinos)")
+    reun = treino.comparar(None, None, "9999", treinos=[])["reunioes"]
+    if reun.get("silabas_por_s"):
+        print(f"\nSuas reuniões (mediana das últimas {reun['silabas_por_s']['n']}): "
+              f"{br(reun['silabas_por_s']['mediana'], 2)} sílabas/s"
+              + (f" · muleta {br(reun['muleta_pura_por_1000']['mediana'], 1)}/1k" if reun.get("muleta_pura_por_1000") else "")
+              + ". A distância entre o treino e a reunião é o que ainda não passou para a conversa.")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="atas", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -851,6 +954,24 @@ def main(argv=None):
     p.add_argument("id", nargs="?")
     p.set_defaults(fn=c_voz_referencia)
     sub.add_parser("limpar-audio").set_defaults(fn=c_limpar)
+    for nome, fn, ajuda in (("treinar", c_treinar, "treino de fala sozinho: grava só o microfone"),
+                            ("treino", c_treino_arquivo, "analisa um treino já gravado (arquivo de áudio)")):
+        p = sub.add_parser(nome, help=ajuda)
+        if nome == "treino":
+            p.add_argument("arquivo")
+            p.add_argument("--data", help='quando foi o treino, "AAAA-MM-DD HH:MM" (padrão: nome ou data do arquivo)')
+        p.add_argument("--tipo", default="reuniao", help="reuniao (padrão) ou tema")
+        p.add_argument("--assunto", help="sobre o que é o treino (opcional)")
+        p.add_argument("--nota", help="nota de estudo do Sinapse para conferir o conteúdo (nome em 02-ESTUDO ou caminho)")
+        p.add_argument("--duracao", type=int, default=180, help="alvo de duração em segundos (padrão 180)")
+        p.add_argument("--alvo", type=float, default=4.8, help="alvo de sílabas/s (4.8 padrão; 4.5 leitura ritmada)")
+        p.add_argument("--sem-claude", action="store_true", help="só as métricas")
+        p.set_defaults(fn=fn)
+    p = sub.add_parser("treinos", help="os treinos com a evolução")
+    p.add_argument("--tipo", help="reuniao ou tema")
+    p.add_argument("-n", type=int, default=20)
+    p.add_argument("--manter", metavar="ID", help="guarda o áudio deste treino (fora da retenção)")
+    p.set_defaults(fn=c_treinos)
     a = ap.parse_args(argv)
     a.fn(a)
 
