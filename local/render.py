@@ -111,6 +111,12 @@ def html(ata, segs, cliente=False, impressao=False):
                       'A transcrição está completa abaixo; rode <code>/ata</code> no Claude '
                       'para extrair decisões e encaminhamentos.</p></section>')
 
+    # Momentos marcados (14/10/2026): no topo da ata INTERNA. Ao cliente nunca vão — marcar é
+    # ferramenta do Pedro; o que a marca achou de decisão/valor já está nas listas normais.
+    todas_falas = _ata.falas(segs)
+    if not cliente and ata.get("momentos"):
+        blocos.append(_secao_momentos(ata["momentos"], todas_falas))
+
     dec = itens("decisoes")
     if dec:
         lis = []
@@ -197,7 +203,7 @@ def html(ata, segs, cliente=False, impressao=False):
     # Transcrição: inteira só na ata interna. Ao cliente vão os TRECHOS que sustentam os itens
     # verificados (v2.1): a ata de 05/10 virou um PDF de 179 páginas com 15 min de conversa
     # pessoal, a um clique de "Publicar".
-    todas = _ata.falas(segs)
+    todas = todas_falas
     if cliente:
         citados = {_ata.parse_t(it.get("t")) for k, _ in _ata.LISTAS for it in itens(k)}
         mostrar = [f for f in todas if any(t is not None and abs(f["start"] - t) < 1 for t in citados)]
@@ -207,7 +213,8 @@ def html(ata, segs, cliente=False, impressao=False):
     falas = []
     for f in mostrar:
         eu = f["speaker"] == "Você"
-        falas.append(f'<div class="fala{" eu" if eu else ""}"><div class="quem">'
+        ancora = f' id="f-{int(f["start"])}"' if not cliente else ""
+        falas.append(f'<div class="fala{" eu" if eu else ""}"{ancora}><div class="quem">'
                      f'{e(nome(f["speaker"]))}<span class="ts">{_ata.fmt_t(f["start"])}</span>'
                      f'</div><div class="txt">{e(f["text"])}</div></div>')
     if falas or not cliente:
@@ -239,7 +246,47 @@ def html(ata, segs, cliente=False, impressao=False):
             f'{rodape}</div></body></html>')
 
 
+def texto_momento(mo):
+    """A frase do momento, ou o porquê de não ter frase. Nunca inventa."""
+    if mo.get("pendente"):
+        return None, "marcado — trecho ainda não lido pelo Claude"
+    if mo.get("o_que") and mo.get("citacao"):
+        return mo["o_que"], None
+    return None, "marcado — sem decisão clara no trecho"
+
+
+def _secao_momentos(momentos, falas):
+    import marcas as _marcas
+    lis = []
+    for mo in momentos:
+        ini, _fim = _marcas.janela(mo["marca_t"])
+        # o horário leva ao começo do trecho na transcrição (que abre sozinha ao seguir o link)
+        alvo = next((f for f in falas if f["start"] >= ini - 5), falas[-1] if falas else None)
+        hora = e(mo.get("hora") or _ata.fmt_t(mo["marca_t"]))
+        hora = (f'<a class="hora" href="#f-{int(alvo["start"])}" title="ir ao trecho na transcrição">{hora}</a>'
+                if alvo else f'<span class="hora">{hora}</span>')
+        frase, vazio = texto_momento(mo)
+        corpo = e(frase) if frase else f'<span class="lacuna">{e(vazio)}</span>'
+        meta = []
+        if frase:
+            meta.append(f'<q>{e(mo["citacao"])}</q><span class="ts">{e(mo.get("t"))}</span>')
+        if mo.get("itens"):
+            meta.append("na ata: " + ", ".join(e(i) for i in mo["itens"]))
+        meta_html = f'<div class="meta">{" · ".join(meta)}</div>' if meta else ""
+        lis.append(f'<li><p>{hora}{corpo}</p>{meta_html}</li>')
+    # a transcrição fica num <details> fechado: abre antes de pular para o trecho
+    abrir = ('<script>document.addEventListener("click",function(ev){var a=ev.target.closest'
+             '&&ev.target.closest("a.hora");if(!a)return;var f=document.querySelector(a.getAttribute("href"));'
+             'var d=f&&f.closest("details");if(d)d.open=true;});</script>')
+    return (f'<section class="momentos"><h2>Momentos marcados</h2>'
+            f'<ul class="itens">{"".join(lis)}</ul>{abrir}</section>')
+
+
 CSS_BASE = """
+.momentos .hora{font-family:var(--mono);font-size:13px;color:var(--accent);text-decoration:none;
+  margin-right:12px}
+.momentos a.hora:hover{text-decoration:underline}
+.momentos q{font-style:italic}
 .wrap{max-width:780px;margin:0 auto;padding:48px 24px 24px}
 section{margin:0 0 44px}
 h1{font-family:var(--disp);font-weight:700;letter-spacing:-.5px;line-height:1.15;margin:0 0 12px;
@@ -309,6 +356,18 @@ def markdown(ata, segs):
              for p in ata.get("participantes", []) if p.get("nome") or p.get("fatia", 1) >= 0.05]
     if parts:
         L += ["**Participantes:** " + " · ".join(parts), ""]
+    if ata.get("momentos"):
+        L += ["## Momentos marcados", ""]
+        for mo in ata["momentos"]:
+            frase, vazio = texto_momento(mo)
+            linha = f"- **{mo['id']}** [{mo.get('hora')}] " + (
+                f"{frase} — \"{mo['citacao']}\" [{mo.get('t')}]" if frase else f"_{vazio}_")
+            if mo.get("itens"):
+                linha += " · na ata: " + ", ".join(mo["itens"])
+            if mo.get("citacao_descartada"):
+                linha += " · ⚠ citação do Claude descartada (não estava no trecho)"
+            L.append(linha)
+        L.append("")
     if ata.get("decisoes"):
         L += ["## Decisões", ""]
         for d in ata["decisoes"]:

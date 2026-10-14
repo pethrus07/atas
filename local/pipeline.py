@@ -286,6 +286,12 @@ def processar(s, cfg=None, log=print, forcar=(), estruturar=None, publicar_=None
                             custo_usd=(a.get("gerado") or {}).get("custo_usd"))
                 _salvar_ata(s, a)
 
+        # marca acrescentada depois de a ata existir (`atas.py marcar`) aparece já, como pendente
+        if s.m.get("marcas") or a.get("momentos"):
+            _ata.sincronizar_momentos(a, s.m.get("marcas"))
+            _ata.auditar_momentos(a, _ata.falas(segs))
+            _salvar_ata(s, a)
+
         # ── páginas e PDF ──
         renderizar(s, a, segs, log)
 
@@ -359,6 +365,8 @@ def reaplicar(s, cfg=None, log=print, publicar_=None):
     if a is None:
         raise RuntimeError("esta sessão ainda não tem ata.json")
     a["_remotos"] = s.participantes_remotos()
+    # marca acrescentada depois (`atas.py marcar`) entra como pendente; a analisada é mantida
+    _ata.sincronizar_momentos(a, s.m.get("marcas"))
     _ata.auditar(a, segs)
     a.pop("_remotos", None)
     _salvar_ata(s, a)

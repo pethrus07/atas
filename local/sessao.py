@@ -32,7 +32,9 @@ import time
 import unicodedata
 
 BASE = pathlib.Path(__file__).resolve().parent.parent
-SALVAS = BASE / "atas-salvas"
+# ATAS_SALVAS (14/10/2026): roda o CLI contra uma CÓPIA das reuniões numa pasta temporária, sem tocar
+# nas de verdade (ensaio de ferramenta nova numa reunião real)
+SALVAS = pathlib.Path(os.environ["ATAS_SALVAS"]) if os.environ.get("ATAS_SALVAS") else BASE / "atas-salvas"
 SR = 16000
 
 SCHEMA_SESSAO = "atas/sessao@1"

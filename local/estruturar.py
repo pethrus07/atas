@@ -21,9 +21,10 @@ import time
 
 import ata as _ata
 import config as _config
+import marcas as _marcas
 from sessao import TIPOS
 
-VERSAO_PROMPT = "3"   # 3 = valores, escopo, por_tema e blocos (v2.1, 06/10/2026)
+VERSAO_PROMPT = "4"   # 3 = valores, escopo, por_tema e blocos (v2.1, 06/10/2026); 4 = momentos marcados (14/10)
 
 _DIAS = ["segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira",
          "sábado", "domingo"]
@@ -60,7 +61,11 @@ def _linhas_celular(sessao, meu_nome, papel):
     ]
 
 
-def prompt(sessao, meu_nome):
+def prompt(sessao, meu_nome, marcas=None):
+    """`marcas`: [(id, marca)] que este pedaço da reunião tem de tratar (marcas.identificadas /
+    marcas.do_bloco). None = todas as da sessão."""
+    if marcas is None:
+        marcas = _marcas.identificadas(sessao.m.get("marcas") or [])
     d = _data_reuniao(sessao)
     remotos = sessao.participantes_remotos()
     tipo = sessao.tipo
@@ -128,8 +133,19 @@ def prompt(sessao, meu_nome):
         "pode cobrir vários). Conversa pessoal ou fora de pauta (política, vida pessoal) NÃO "
         "entra em resumo, tema nem item.",
         "10. Português do Brasil. Nada que não esteja na transcrição.",
+        *_marcas.linhas_prompt(marcas),
     ]
     return "\n".join(linhas)
+
+
+def esquema(com_momentos):
+    """O esquema da ata; com marca, `momentos` passa a ser obrigatório (sem marca, fica de fora do
+    pedido e o Claude não perde tempo com ele)."""
+    if not com_momentos:
+        return _ata.ESQUEMA_CLAUDE
+    e = dict(_ata.ESQUEMA_CLAUDE)
+    e["required"] = list(e["required"]) + ["momentos"]
+    return e
 
 
 # ── reunião longa: estrutura por blocos (v2.1) ────────────────────────────────
@@ -195,6 +211,14 @@ def juntar(partes):
             if not atual or (f.get("nome") and not atual.get("nome")):
                 falantes[f.get("rotulo")] = f
     out["falantes"] = list(falantes.values())
+    # cada marca foi pedida a UM bloco só (marcas.do_bloco); se outro bloco a devolveu mesmo assim,
+    # vale a primeira resposta com citação
+    mom = {}
+    for p in partes:
+        for x in p.get("momentos") or []:
+            if x.get("marca") not in mom or (x.get("citacao") and not mom[x["marca"]].get("citacao")):
+                mom[x.get("marca")] = x
+    out["momentos"] = list(mom.values())
     return out
 
 
@@ -247,8 +271,10 @@ def estruturar(sessao, segs, cfg, log=print):
     if dur_min > float(cfg.get("estruturar_blocos_acima_min", 60)):
         bruto, meta = _estruturar_em_blocos(sessao, segs, cfg, meu, log)
     else:
-        log(f"  Estruturando a ata com o Claude ({len(texto):,} caracteres)…".replace(",", "."))
-        bruto, meta = chamar_claude(prompt(sessao, meu), texto, cfg, log)
+        mk = _marcas.identificadas(sessao.m.get("marcas") or [])
+        log(f"  Estruturando a ata com o Claude ({len(texto):,} caracteres".replace(",", ".")
+            + (f", {len(mk)} momento(s) marcado(s)" if mk else "") + ")…")
+        bruto, meta = chamar_claude(prompt(sessao, meu, mk), texto, cfg, log, esquema=esquema(bool(mk)))
     a = _ata.montar(sessao, segs, bruto, meta, meu)
     c = _ata.contagem(a)
     log(f"    {c['decisoes']} decisões · {c['encaminhamentos']} encaminhamentos · "
@@ -260,16 +286,20 @@ def estruturar(sessao, segs, cfg, log=print):
 def _estruturar_em_blocos(sessao, segs, cfg, meu, log=print):
     """Reunião longa: um claude -p por bloco + uma passada que consolida a prosa."""
     partes, custo, seg = [], 0.0, 0.0
-    bls = blocos(segs, bloco_s=int(cfg.get("estruturar_bloco_min", 40)) * 60)
+    bloco_s = int(cfg.get("estruturar_bloco_min", 40)) * 60
+    bls = blocos(segs, bloco_s=bloco_s)
     for k, (ini, bseg) in enumerate(bls, 1):
-        fim = min(ini + int(cfg.get("estruturar_bloco_min", 40)) * 60, max(s["end"] for s in segs))
-        log(f"  Estruturando o bloco {k}/{len(bls)} ({_ata.fmt_t(ini)} a {_ata.fmt_t(fim)})…")
-        p = prompt(sessao, meu) + (
+        fim = min(ini + bloco_s, max(s["end"] for s in segs))
+        # cada marca vai ao bloco em que ela caiu (a sobra de 120 s cobre a janela de 45 s / 15 s)
+        mk = _marcas.do_bloco(sessao.m.get("marcas") or [], ini, bloco_s, ultimo=k == len(bls))
+        log(f"  Estruturando o bloco {k}/{len(bls)} ({_ata.fmt_t(ini)} a {_ata.fmt_t(fim)})"
+            + (f" com {len(mk)} momento(s) marcado(s)" if mk else "") + "…")
+        p = prompt(sessao, meu, mk) + (
             f"\n\nATENÇÃO: este é o trecho {k} de {len(bls)} de uma reunião mais longa "
             f"(de {_ata.fmt_t(ini)} a {_ata.fmt_t(fim)}, com um pouco de sobra antes e depois). "
             "Extraia os itens que aparecem NESTE trecho; resumo, contexto, temas e por_tema também "
             "só deste trecho.")
-        bruto, meta = chamar_claude(p, _ata.transcricao_texto(bseg), cfg, log)
+        bruto, meta = chamar_claude(p, _ata.transcricao_texto(bseg), cfg, log, esquema=esquema(bool(mk)))
         partes.append(bruto)
         custo += meta.get("custo_usd") or 0
         seg += meta.get("segundos") or 0

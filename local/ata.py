@@ -16,6 +16,9 @@ Tudo o que sai de uma reunião (página, PDF, .md, índice, o /ata, o log de dec
     escopo          [{id S1.., item, tema, t, citacao, verificado, problemas[]}]
     por_tema        [{tema, resumo}]  — prosa por assunto (v2.1, 06/10/2026: a reunião de 3 h com o
                       Valter tratou de 3 projetos, e valores e lista de funcionalidades não tinham lugar)
+    momentos        [{id M1.., marca_t, hora, origem, o_que, tipo, t, citacao, verificado, pendente,
+                      itens[], problemas[]}] — um por marca do sessao.json (marcas.py, 14/10/2026);
+                      só na ata interna, nunca no entregável
     lacunas         [{ref, falta}]   — calculado, nunca escrito à mão
     gerado          {por, modelo, em, segundos, custo_usd, versao_prompt}
     status          pendente | estruturada | revisada
@@ -73,6 +76,13 @@ ESQUEMA_CLAUDE = {
             "required": ["item", "tema", "t", "citacao"]}},
         "por_tema": {"type": "array", "items": {"type": "object", "properties": {
             "tema": _S, "resumo": _S}, "required": ["tema", "resumo"]}},
+        # momentos marcados (14/10/2026): opcional no esquema — reunião sem marca não pede nada
+        "momentos": {"type": "array", "items": {"type": "object", "properties": {
+            "marca": _S, "o_que": _SN,
+            "tipo": {"type": "string", "enum": ["decisao", "valor", "compromisso", "prazo", "pergunta",
+                                                 "risco", "informacao", "nada"]},
+            "t": _SN, "citacao": _SN},
+            "required": ["marca", "o_que", "tipo", "t", "citacao"]}},
     },
     "required": ["falantes", "contexto", "resumo", "temas", "decisoes", "encaminhamentos",
                  "perguntas_abertas", "riscos", "valores", "escopo", "por_tema"],
@@ -322,7 +332,73 @@ def auditar(ata, segs):
                 if v and campo not in manual and norm(v) not in conhecidos and not _contem(v, blob):
                     probs.append(f"{campo} '{v}' não aparece na transcrição nem nos participantes")
             it["problemas"] = probs
+    auditar_momentos(ata, fl)
     ata["lacunas"] = lacunas(ata)
+    return ata
+
+
+# ── momentos marcados (14/10/2026) ──────────────────────────────────────────
+def _momento_vazio(mid, m):
+    return {"id": mid, "marca_t": m["t"], "hora": fmt_t(m["t"]), "origem": m.get("origem"),
+            "o_que": None, "tipo": "nada", "t": None, "citacao": None, "verificado": None,
+            "pendente": True, "itens": [], "problemas": []}
+
+
+def sincronizar_momentos(ata, marcas, do_claude=None):
+    """Um momento por marca do sessao.json, na ordem do tempo. `do_claude` (a lista `momentos` que
+    o Claude devolveu, por id M1, M2…) preenche o conteúdo. Sem ela, o que já estava analisado na
+    ata é mantido (casado pelo instante da marca); marca nova fica `pendente` (precisa refazer a
+    estrutura) e marca que sumiu do sessao.json sai da ata."""
+    import marcas as _marcas
+    antigos = {round(x.get("marca_t", -1), 1): x for x in ata.get("momentos") or []}
+    claude = {x.get("marca"): x for x in (do_claude or [])}
+    out = []
+    for mid, m in _marcas.identificadas(marcas or []):
+        novo = _momento_vazio(mid, m)
+        if do_claude is not None:
+            c = claude.get(mid) or {}
+            novo.update({k: c.get(k) for k in ("o_que", "t", "citacao")})
+            novo["tipo"] = c.get("tipo") or "nada"
+            novo["pendente"] = False
+        elif round(m["t"], 1) in antigos:
+            velho = antigos[round(m["t"], 1)]
+            novo.update({k: velho.get(k) for k in ("o_que", "tipo", "t", "citacao", "verificado",
+                                                   "pendente", "citacao_descartada")
+                         if k in velho})
+        out.append(novo)
+    ata["momentos"] = out
+    return out
+
+
+def auditar_momentos(ata, fl):
+    """A mesma regra das listas: a citação tem de estar LITERALMENTE numa fala — e, aqui, numa fala
+    do trecho da marca. O que não passa é descartado (vira "sem decisão clara"), nunca mostrado como
+    fato. Depois liga cada momento aos itens verificados da ata que caem no trecho dele."""
+    import marcas as _marcas
+    for mo in ata.get("momentos") or []:
+        probs = []
+        mt = mo["marca_t"]
+        if mo.get("pendente"):
+            probs.append("trecho ainda não lido pelo Claude: refaça a estrutura "
+                         "(`atas.py processar <id> --forcar estrutura`)")
+        elif mo.get("citacao"):
+            i = _achar(mo["citacao"], fl, parse_t(mo.get("t")))
+            if i is None or not _marcas.dentro(fl[i]["start"], mt):
+                probs.append("citação descartada: " + ("não localizada na transcrição" if i is None
+                                                       else f"fora do trecho da marca ({fmt_t(fl[i]['start'])})"))
+                mo.update({"citacao_descartada": mo["citacao"], "citacao": None, "t": None, "o_que": None,
+                           "tipo": "nada", "verificado": False})
+            else:
+                mo["verificado"] = True
+                mo["t"] = fmt_t(fl[i]["start"])
+        else:
+            mo.update({"o_que": None, "tipo": "nada", "t": None})
+            if mo.get("verificado") is not False:
+                mo["verificado"] = None
+        mo["itens"] = [it["id"] for k, _ in LISTAS for it in ata.get(k, [])
+                       if it.get("verificado") is not False and parse_t(it.get("t")) is not None
+                       and _marcas.dentro(parse_t(it["t"]), mt, folga_s=0)]
+        mo["problemas"] = probs
     return ata
 
 
@@ -395,8 +471,14 @@ def base(sessao, segs, meu_nome):
         "contexto": None, "resumo": None, "temas": [],
         "decisoes": [], "encaminhamentos": [], "perguntas_abertas": [], "riscos": [],
         "valores": [], "escopo": [], "por_tema": [],
+        "momentos": [_momento_vazio(i, mk) for i, mk in _marcas_identificadas(m.get("marcas"))],
         "lacunas": [], "gerado": None, "revisado": None, "status": "pendente",
     }
+
+
+def _marcas_identificadas(marcas):
+    import marcas as _marcas
+    return _marcas.identificadas(marcas or [])
 
 
 def montar(sessao, segs, bruto, gerado, meu_nome):
@@ -422,6 +504,7 @@ def montar(sessao, segs, bruto, gerado, meu_nome):
             it["id"] = f"{pref}{n}"
             itens.append(it)
         ata[lista] = itens
+    sincronizar_momentos(ata, sessao.m.get("marcas"), bruto.get("momentos") or [])
     ata["gerado"] = gerado
     ata["status"] = "estruturada"
     auditar(ata, segs)
