@@ -384,9 +384,66 @@ class App(tk.Tk):
                                   wraplength=_p(370))
         self.l_alerta.pack(anchor="w", pady=(_p(8), 0))
         self.avisos_disp = list(disp["avisos"])
-        ttk.Button(f, text="Parar e gerar a ata", style="Primario.TButton",
-                   command=self.parar).pack(side="bottom", fill="x")
+        rod = ttk.Frame(f)
+        rod.pack(side="bottom", fill="x")
+        # marcar momento (14/10/2026): uma linha discreta acima do Parar; o contador só aparece
+        # depois da primeira marca. Sem som nem popup: a call está em primeiro plano.
+        linha = ttk.Frame(rod)
+        linha.pack(fill="x", pady=(0, _p(12)))
+        self._link(linha, "Marcar momento", lambda: self._marcar(self.g.decorrido() if self.g else None,
+                                                                 "botao")).pack(side="left")
+        self.l_atalho = ttk.Label(linha, text="", style="Sub.TLabel")
+        self.l_atalho.pack(side="left", padx=(_p(8), 0))
+        self.l_marcas = ttk.Label(linha, text="", style="Sub.TLabel")
+        self.l_marcas.pack(side="right")
+        ttk.Button(rod, text="Parar e gerar a ata", style="Primario.TButton",
+                   command=self.parar).pack(fill="x")
+        self._ligar_atalho()
         self._tique()
+
+    # ── marcar momento (14/10/2026) ─────────────────────────────────────────
+    def _ligar_atalho(self):
+        import atalho
+        self.at = None
+        try:
+            def disparou():                      # thread do atalho: só anota o instante
+                g = self.g
+                if g is not None:
+                    t = g.decorrido()
+                    self.q.put(lambda: self._marcar(t, "atalho"))
+            self.at = atalho.iniciar(disparou, self.cfg.get("marcar_atalho") or atalho.PADRAO)
+            if self.at.erro:
+                self.avisos_disp.append(self.at.erro)
+                self.at = None
+            else:
+                self.l_atalho.configure(text=atalho.legivel(self.at.atalho))
+        except Exception as e:
+            _log(traceback.format_exc())
+            self.avisos_disp.append(f"atalho de marcar indisponível ({e}): use o botão")
+
+    def _desligar_atalho(self):
+        at, self.at = getattr(self, "at", None), None
+        if at is not None:
+            at.parar()
+
+    def _marcar(self, t, origem):
+        import marcas
+        if self.g is None or self.s is None or t is None:
+            return
+        try:
+            nova = marcas.adicionar(self.s, t, origem)
+        except RuntimeError:                 # o ao vivo mexeu no manifesto no mesmo instante
+            _log(traceback.format_exc())
+            self.s.salvar()                  # a marca já está em s.m; só falta o disco
+            nova = True
+        if nova is not None and self.cfg.get("marcar_som"):
+            try:
+                import winsound
+                winsound.MessageBeep(0)
+            except Exception:
+                pass
+        n = len(marcas.lista(self.s))
+        self.l_marcas.configure(text=f"{n} momento{'s' if n != 1 else ''} marcado{'s' if n != 1 else ''}")
 
     def _tique(self):
         if self.g is None:
@@ -397,7 +454,10 @@ class App(tk.Tk):
             self.l_rec.configure(text="✕ NÃO ESTÁ GRAVANDO")
             self.title("✕ Não está gravando — Atas")
         else:
-            self.title(f"● {_fmt_tempo(dec)} — Atas")
+            # a janela fica atrás do Meet: o título (barra de tarefas) confirma a marca sem roubar foco
+            n = len(self.s.m.get("marcas") or [])
+            self.title(f"● {_fmt_tempo(dec)}" + (f" · {n} marcado{'s' if n != 1 else ''}" if n else "")
+                       + " — Atas")
         self.l_tempo.configure(text=_fmt_tempo(dec))
         for k, b in self.barras.items():
             b["value"] = _nivel_pct(self.g.niveis().get(k, 0))
@@ -424,6 +484,7 @@ class App(tk.Tk):
         g, self.g = self.g, None
         if g is None:
             return
+        self._desligar_atalho()
         if self.av is not None:
             self.av.parar()
         g.parar()
