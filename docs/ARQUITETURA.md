@@ -79,6 +79,7 @@ atas/
 │   ├── ao_vivo.py             transcrição incremental durante a reunião (MVP, GPU)
 │   ├── analise_fala.py        Raio-X da fala + nota do Sinapse
 │   ├── legado.py              importa as atas soltas de antes da v2
+│   ├── celular.py             reunião presencial: arquivo do celular → sessão de um canal (§18)
 │   ├── config.py              padrões + config.json + onde está o claude.exe
 │   ├── vocabulario.json       termos por tipo e por projeto (hotwords do Whisper)
 │   ├── config.example.json    modelo do config (o real, com token, fica FORA do git)
@@ -90,7 +91,7 @@ atas/
 │   ├── wrangler.toml          conta FIXADA, D1, cron, ambiente homolog
 │   ├── package.json + test/   só para os testes (Miniflare); o deploy não tem build
 ├── claude/skills/ata/         a skill /ata (junction em ~/.claude/skills/ata)
-├── tests/                     pytest: 91 testes (3 lentos: fumaça e gravação reais, -m lento)
+├── tests/                     pytest: 108 testes (4 lentos: fumaça, gravação e celular reais, -m lento)
 ├── atas-salvas/               FORA DO GIT — uma pasta por reunião (§8)
 ├── fala-analise/              FORA DO GIT — histórico e painel do Raio-X
 └── docs/                      este arquivo + BRIEFING-V2.md
@@ -110,7 +111,8 @@ checagem no meio) e o Pedro achou "um pouquinho too much" na primeira reunião r
    que falhou numa etapa essencial e oferece "Terminar agora" / "Agora não".
 3. **Nova reunião (R6).** Título, **tipo (obrigatório, sem valor padrão — herdar o da reunião
    anterior fazia Parresia virar cliente)** e quem fala do outro lado. Projeto, Claude e ao
-   vivo ficam em "Mais opções", recolhido, com resumo de uma linha.
+   vivo ficam em "Mais opções", recolhido, com resumo de uma linha. Só em **cliente** aparece
+   uma linha discreta **Formato** (não sei · descoberta · demo · alinhamento), opcional (§18).
 4. **Gravar já grava.** Numa thread, `record.escolher_dispositivos()` escolhe o microfone —
    **fone (USB/Bluetooth) antes do interno**, cada um tentado pelo `soundcard` e, se não abrir,
    pela via PortAudio — e o loopback da saída padrão. Em seguida `Sessao.criar()` faz a pasta
@@ -361,6 +363,13 @@ e reunião antiga com tipo inferido), `despublicar <id>`, `publicadas`.
 **Corrigir o tipo/projeto.** `tipo <id> cliente --projeto instituto-automacao` (marca a
 classificação como confirmada; mudar para interno tira a página do ar).
 
+**Corrigir o formato (cliente).** `formato <id> <descoberta|demo|alinhamento|nenhum>`; refaz o
+Raio-X se ele já tinha rodado.
+
+**Reunião presencial gravada no celular.** `importar <arquivo> --titulo T [--tipo] [--participantes
+"A,B"] [--formato] [--data "AAAA-MM-DD HH:MM"]`, ou `vigiar <pasta> [--continuo]`. Depois, no /ata,
+`confirmar <id>` (acertou quem é você) ou `falantes <id> "Participante 2=Você"` (errou). §18.
+
 **Homologação do Worker (uma vez).** Em `worker/`:
 ```powershell
 npx wrangler d1 create atas-homolog          # cole o database_id em [env.homolog] do wrangler.toml
@@ -408,7 +417,7 @@ disputaria processador com a chamada). Não substitui a transcrição final.
 | /ata, índice (`buscar`), log de decisões | **prontos** | `claude/skills/ata`, `atas.py` |
 | Raio-X sem título no Sinapse | **pronto**; nota regravada | `analise_fala.py` |
 | 27 atas antigas | **importadas** como sessões `legado`, tipo/projeto **inferidos**; sem áudio; ainda não estruturadas | `legado.py` |
-| Testes | 91 em Python em 14/10 (3 lentos, 2 com os dispositivos reais) + 10 no Worker | `tests/`, `worker/test/` |
+| Testes | 108 em Python em 14/10 (4 lentos, 2 com os dispositivos reais) + 10 no Worker | `tests/`, `worker/test/` |
 | Ao vivo | MVP pronto, **não testado numa reunião real** | `ao_vivo.py` |
 | Domínio próprio | adiado | README da v1 / memória |
 
@@ -553,8 +562,9 @@ o que já existia e muda a leitura. Tudo em `local/analise_fala.py` (linhas nova
 `atas.py fala`, a janela, a nota do Sinapse e o prompt da avaliação leem daí.
 
 **Tipo e formato.** A fatia usa `tipo` e `participantes` do `sessao.json`. O campo opcional
-`formato` (`descoberta` · `demo` · `alinhamento`) também é lido de lá, se existir; a janela não
-pergunta. Sem ele, cliente usa 35–55% e a leitura diz por quê.
+`formato` (`descoberta` · `demo` · `alinhamento`) também é lido de lá, se existir; desde 14/10 a
+janela pergunta (só em cliente, opcional) e `atas.py formato` corrige (§18). Sem ele, cliente usa
+35–55% e a leitura diz por quê.
 
 **Compatibilidade.** O `historico.jsonl` antigo continua sendo lido. `metrics.versao = 3` marca as
 linhas novas. Nas antigas, a muleta pura sai da contagem por palavra (aproximada, marcada com `*`
@@ -578,3 +588,107 @@ antes × depois.
   reuniões de outubro pode ser em parte isso.
 - Fatia com 3+ pessoas: a faixa 0,75×–1,5× de 1/N é heurística, sem fonte.
 - A mediana das últimas 5 mistura linhas da v1/v2 até haver 5 reuniões novas.
+
+**Recálculo real (14/10/2026).** `fala --recalcular` rodou no histórico de verdade (backup em
+`fala-analise/historico.jsonl.bak-2026-10-14`; o vault não foi tocado — conferido com
+`SINAPSE_VAULT` apontando para uma pasta vazia, que continuou vazia). 4 reuniões reprocessadas
+(as não legadas com transcrição: 05/10, 06/10, 09/10, 13/10). A base da próxima reunião (as 5
+últimas com ≥1.000 palavras) ficou: muleta pura **31,4/1k** (3 das 5 aproximadas), "aí" **17,9/1k**,
+confirmação **1,56/min** (só 2 linhas v3 contam), fatia **49%**, **200 ppm**, resposta **0,78 s**,
+**5,92 sílabas/s** e compromisso com dono e prazo **56%** (as quatro últimas só existem na v3).
+
+## 18 · Formato e reunião presencial do celular (14/10/2026)
+
+### Formato
+
+A tela de partida mostra, **só quando o tipo é cliente**, uma linha "Formato" com um combobox
+(não sei · descoberta · demo · alinhamento; padrão "não sei"). Não é tela nova nem campo
+obrigatório: trocar o tipo para outro esconde a linha e zera a escolha. Vai para `sessao.json`
+(`formato`, `null` = não sei), que o Raio-X já lia (§17). `atas.py formato <id> <f|nenhum>`
+corrige depois e refaz o Raio-X se ele já tinha rodado; o `/ata` propõe um formato quando a
+reunião é de cliente e o campo está vazio. `FORMATOS` vive em `sessao.py`.
+
+### Reunião presencial gravada no celular
+
+O gravador tem dois canais físicos, e é isso que garante "só as falas de Você são do Pedro". Uma
+reunião presencial gravada no celular tem **um canal com todo mundo**. `local/celular.py`:
+
+```
+arquivo (m4a · mp3 · wav · ogg · opus · aac · amr · 3gp)
+  → ffmpeg → audio/celular.opus (mono 16 kHz 24 kbps, duração conferida com o ffprobe)
+  → sessao.json: origem "celular", canais 1, origem_arquivo {nome, sha256, bytes}, inicio
+  → pipeline normal; transcribe.transcrever_celular no lugar dos dois canais:
+      Whisper no canal único (rótulo "Falante")
+      diarização com N = participantes informados + 1 (sem eles: limiar + teto, §6)
+      qual grupo é o Pedro → "Você"; os outros → "Participante" / "Participante N"
+  → "Você" A CONFIRMAR: na ata (confirmado: false, com a evidência), no prompt do Claude
+    ("PROVAVELMENTE Pedro"), e o Raio-X e a avaliação ficam `pendente`
+```
+
+**Como se acha o Pedro** (`celular.escolher_voce`, a escolha documentada):
+1. **Amostra de referência** `local/models/voz-referencia.wav` (fora do git): ~60 s das falas
+   "Você" do **canal do microfone** de uma reunião do Atas — o único áudio que só tem ele. Feita
+   sozinha na primeira importação (a reunião mais recente com microfone) ou com
+   `atas.py voz-referencia [<id>]`. O `diarize.py` compara o vetor de voz CAM++ (o mesmo da
+   diarização) de cada grupo com o da amostra. Vale se o mais parecido tiver cosseno ≥ **0,45**
+   e ganhar do segundo por ≥ **0,10**.
+2. **Tom da voz**, se a amostra não decidir: mediana do tom do Pedro no histórico do Raio-X
+   (**133 Hz** em 14/10). Vale só se **um** grupo ficar a até 2 semitons dela. Separa o Pedro de
+   uma voz feminina; não separa dois homens de voz parecida.
+3. Nenhuma das duas: ninguém vira "Você", todos ficam "Participante N" e o /ata pergunta.
+
+Por que não perguntar sempre: a amostra resolve quase sempre e o /ata confirma de qualquer jeito;
+por que não confiar sozinha: a ata e o Raio-X são dele, e a diarização erra.
+
+**Medido em 14/10/2026.** Amostra tirada da reunião de 05/10, comparada com outras reuniões:
+voz do Pedro **0,89** (06/10) e **0,56** (13/10); voz dos outros **0,09** e **0,17**. Com as vozes
+SAPI das fixtures misturadas num arquivo só (teste lento `test_celular_ponta_a_ponta_com_amostra`):
+**0,54 × 0,35**, grupo certo escolhido; mas a diarização pôs só **5 de 8** falas no rótulo certo
+(o mesmo ~0,58 de §6). **Não calibrado em áudio de celular real** (sala, distância, eco): os
+limiares vêm das vozes sintéticas e do canal do microfone.
+
+**Confirmar.** `atas.py confirmar <id>` aceita o palpite; `atas.py falantes <id> "Participante 2=Você"`
+(ou `=Pedro`) troca os rótulos na `transcricao.json` e recria os participantes da ata. Os dois
+marcam `celular.voce_confirmado` e rodam o Raio-X que estava pendente. Se a troca mudou quem é
+quem e a ata já estava estruturada, o comando manda refazer: `processar <id> --forcar
+estrutura,avaliacao`.
+
+**Tipo pendente.** Sem `--tipo`, a sessão nasce com tipo `pendente` (`sessao.TIPO_PENDENTE`, fora
+de `TIPOS`, a janela nunca oferece): sem entregável, sem publicação (`publicar` recusa), sem
+avaliação; a ata é estruturada neutra, como interna. `atas.py tipo <id> <tipo>` resolve e refaz o
+Raio-X. Regra de 30/09: tipo é escolha do Pedro, nunca herdado nem deduzido.
+
+**Data.** `--data "AAAA-MM-DD HH:MM"`; senão o nome do arquivo (`AAAA-MM-DD_HHMM.m4a`, o padrão
+do MacroDroid, `20261014_103000`, "Gravação 2026-10-14 10-30-00"); senão a data de modificação do
+arquivo menos a duração. Fica registrado em `inicio_por`.
+
+**Vigiar uma pasta.** `atas.py vigiar <pasta> [--tipo] [--continuo --intervalo 120]`: importa os
+áudios novos; **não duplica** (sha256 contra tudo o que já veio de arquivo — a cópia "(1)" que o
+OneDrive cria em conflito não vira reunião nova); pula o que foi mexido há menos de 60 s (ainda
+sincronizando). **Nada é agendado no Windows**: rodar à mão, ou deixar `--continuo` aberto.
+
+**Do celular ao PC (Android).** O app do OneDrive no Android **não sincroniza pasta local** (só
+envia a câmera). Dois caminhos:
+- manual: gravador nativo → Compartilhar → OneDrive → `Atas-celular`;
+- automático: app ponte **FolderSync** (grátis com anúncio) ou **Round Sync** (rclone, código
+  aberto), `Recordings/Atas-celular` → `Atas-celular` do OneDrive, só envio, só no Wi-Fi. Evitar
+  OneSync/Autosync: o grátis limita o arquivo a 10 MB (1 h de reunião passa disso).
+- Xiaomi e Samsung podem matar a gravação com a tela apagada: testar 10 min antes da primeira
+  reunião real e tirar gravador e app ponte da otimização de bateria.
+- Com MacroDroid gravando como `AAAA-MM-DD_HHMM.m4a`, a data da sessão sai do nome.
+
+**LGPD.** As mesmas regras da gravação: `celular.opus` fica 30 dias (a retenção apaga `audio/`),
+interno não sai da máquina, pendente não sai de jeito nenhum. O arquivo de origem **não** é
+apagado (só com `--apagar-origem`, depois de conferir a cópia). **Atenção:** o caminho pelo
+OneDrive põe o áudio na nuvem da Microsoft antes de chegar aqui — inclusive o de reunião da
+Parresia. Para reunião interna sensível, prefira cabo USB/`importar` direto, ou use
+`--apagar-origem` (apagar na pasta sincronizada apaga da nuvem). A amostra de voz é biometria
+do Pedro: fica em `local/models/`, fora do git.
+
+**Limites conhecidos.**
+- Sobreposição de fala num canal só: "tomou a vez", "apoio" e "atropelo" do Raio-X saem perto de
+  zero (o Whisper não devolve duas falas ao mesmo tempo). O nível da gravação (dBFS) depende da
+  distância do celular, não do fone: não compare com reunião gravada no PC.
+- Sem participantes informados, o número de vozes vem do limiar + teto (§6), que erra mais.
+- Um rótulo pode misturar o Pedro com outra pessoa; a confirmação no /ata é por rótulo, não por
+  fala.

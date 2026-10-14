@@ -37,6 +37,35 @@ sai como PDF com a marca RYZE e, **quando você manda**, como página com senha 
 Se o PC travar: abra o Atas de novo. Ele avisa "Gravação interrompida" e gera a ata com o
 que foi gravado (perde-se no máximo os últimos ~5 s).
 
+Reunião de **cliente** mostra uma linha discreta **Formato** (não sei · descoberta · demo ·
+alinhamento). É opcional: só afina a leitura do Raio-X. Dá para corrigir depois com
+`atas.py formato <id> demo`.
+
+## Reunião presencial (gravada no celular)
+Uma conversa sem chamada não passa pelo PC. Grave no celular e traga o arquivo:
+
+1. **No Android:** grave com o gravador do próprio celular. Para o arquivo chegar ao PC:
+   - **Na mão, sem app extra:** no gravador, **Compartilhar → OneDrive →** pasta `Atas-celular`.
+   - **Sozinho:** o app do OneDrive no Android **não** sincroniza pasta local (só envia a
+     câmera). Use um app ponte: **FolderSync** (grátis, com anúncio) ou **Round Sync** (rclone,
+     código aberto, grátis), sincronizando `Recordings/Atas-celular` do celular → pasta
+     `Atas-celular` do OneDrive, **só envio, só no Wi-Fi**. Evite OneSync/Autosync: a versão
+     grátis limita o arquivo a 10 MB, e 1 h de reunião passa disso.
+   - **Antes da primeira reunião real**, grave 10 min com a tela apagada e confira o arquivo:
+     Xiaomi e Samsung podem matar a gravação. Tire o gravador e o app ponte da otimização de
+     bateria.
+2. **No PC** (a pasta do OneDrive já sincroniza sozinha):
+   ```powershell
+   Invoke-Expression "$A vigiar `"$env:OneDrive\Atas-celular`""      # importa o que é novo, sem duplicar
+   Invoke-Expression "$A importar `"C:\...\2026-10-14_1030.m4a`" --titulo `"Oficina Jonas`" --tipo cliente --participantes `"Jonas`""
+   ```
+   Sem `--tipo` a reunião fica **pendente**: não gera entregável nem publica até
+   `atas.py tipo <id> <tipo>`. A data sai do `--data`, do nome do arquivo (`AAAA-MM-DD_HHMM.m4a`)
+   ou da data do arquivo. Nada é agendado no Windows; `vigiar --continuo` fica olhando até Ctrl+C.
+3. **No Claude, `/ata`:** como tudo está num canal só, o sistema **estima** qual voz é a sua
+   (pela amostra da sua voz em `local/models/voz-referencia.wav`, ou pelo tom) e pergunta se
+   acertou. Até você confirmar, o Raio-X da fala espera.
+
 > **Consentimento (LGPD):** avise que está gravando. O áudio fica guardado **só nesta
 > máquina** por 30 dias (para reprocessar ou calibrar) e depois é apagado.
 
@@ -53,12 +82,13 @@ Invoke-Expression "$A listar"            # reuniões
 Invoke-Expression "$A mostrar ultima"    # a ata, lacunas e etapas
 Invoke-Expression "$A buscar gateway --pessoa Mauro"
 Invoke-Expression "$A retomar"           # gravação interrompida
+Invoke-Expression "$A importar <áudio>"  # reunião presencial gravada no celular
 ```
 Todos os comandos: `atas.py --help` e [docs/ARQUITETURA.md §11](docs/ARQUITETURA.md#11--receitas).
 
 ## Testes
 ```powershell
-C:\Users\olive\.venvs\faster-whisper\Scripts\python.exe -m pytest tests -q   # 91 testes (88 rápidos + 3 lentos, -m "not lento" pula), ~35 s
+C:\Users\olive\.venvs\faster-whisper\Scripts\python.exe -m pytest tests -q   # 108 testes (104 rápidos + 4 lentos, -m "not lento" pula), ~60 s
 cd worker; npm test                                                          # 10 testes do Worker (Miniflare)
 ```
 

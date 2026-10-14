@@ -23,6 +23,9 @@ Valter, sessão `2026-10-05_2303_alinhamento-valter`), conferida item a item con
 | 13 | Raio-X com postura, frases para revisar e página por reunião | ✅ v2.2 | `analise_fala.postura`, `raio_x_html.py` |
 | 14 | Voz com leitura: o que é, faixas, zona, o que fazer; evolução por bloco de 30 min ("st, volume e tom não significam nada pra mim") | ✅ `6ba25d1` | `analise_fala.leitura_voz`, `raio_x_html._secao_voz`, `tests/test_voz.py` |
 | 15 | Raio-X calibrado com fonte: muleta pura × marcador, "tá" verbo fora, confirmação só com "?", "aí" em degraus, "a gente" sem meta, tomou a vez × apoio, fatia por tipo, sílabas/s, paciência, perguntas abertas, compromisso com dono e prazo, limiar de 1.000 palavras, mediana das últimas 5, `fala --recalcular` | ✅ 14/10 | `analise_fala.py` (v3), `ARQUITETURA.md` §17, `tests/test_raio_x_calibrado.py` |
+| 16 | Formato da reunião de cliente (descoberta/demo/alinhamento) na janela, opcional e só em cliente; `atas.py formato`; o /ata propõe | ✅ 14/10 | `app.py::inicio`, `atas.py::c_formato`, `tests/test_formato.py` |
+| 17 | Recalcular o histórico real do Raio-X com as regras v3 | ✅ 14/10 · 4 reuniões, backup `historico.jsonl.bak-2026-10-14`, vault intocado | `ARQUITETURA.md` §17 |
+| 18 | Reunião presencial gravada no celular: `importar`, `vigiar`, "Você" pela amostra de voz e a confirmar, tipo pendente | ✅ 14/10 · ⏳ falta calibrar em áudio de celular real | `celular.py`, `ARQUITETURA.md` §18, `tests/test_celular.py` |
 | — | Worker v2 no ar (sem ele, nenhuma ata é publicada; a de 05/10 está parada) | ⏳ o login do wrangler virou a conta pessoal | `worker/` |
 | — | Marcar trechos fora de pauta | ⏳ parcial: o prompt tira de resumo e itens; falta marcar na transcrição interna | — |
 
@@ -124,6 +127,14 @@ Pesquisa de referências (ritmo de João Pessoa, Gong, Abralin, CoDAS) mostrou q
 media a régua errada: em 13/10 as "muletas" eram 77,2/1k, mas boa parte era "tá" verbo e marcador;
 "a gente" é pronome padrão; o "aí" ≤8 era inalcançável; reunião de 600 palavras era julgada igual a
 uma de 13 mil. Regras, fontes e limites em `ARQUITETURA.md` §17. Recalcular o histórico real:
-`atas.py fala --recalcular` (não escreve no vault).
-**Pendente:** a janela não pergunta o `formato` (descoberta/demo/alinhamento); por ora só entra
-editando o `sessao.json`.
+`atas.py fala --recalcular` (não escreve no vault) — **rodado em 14/10** (item 17).
+~~Pendente: a janela não pergunta o `formato`~~ → ✅ item 16.
+
+## 16–18. Formato, recálculo e celular (14/10/2026) · ✅
+- **Formato** na tela de partida, só em cliente, "não sei" de padrão; `atas.py formato` corrige.
+- **Recálculo** do histórico real: 4 reuniões. Base da próxima: muleta pura 31,4/1k, "aí" 17,9/1k,
+  confirmação 1,56/min, fatia 49%, 200 ppm, 5,92 sílabas/s, compromisso com dono e prazo 56%.
+- **Celular**: `atas.py importar <arquivo>` / `vigiar <pasta>`. Passo a passo no README; como acha o
+  Pedro, números medidos e limites em `ARQUITETURA.md` §18.
+  **Pendente:** calibrar os limiares (0,45 / margem 0,10) com a primeira reunião presencial real;
+  testar o gravador do celular 10 min com a tela apagada antes dela.
