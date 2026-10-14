@@ -15,6 +15,7 @@ Atas — linha de comando. É a interface do /ata (Claude) e o plano B da janela
     python atas.py decisoes <id>          as decisões no formato do log (decisoes.jsonl)
     python atas.py publicar <id>          publica (só cliente; decisão do Pedro) [--forcar]
     python atas.py tipo <id> <tipo>       corrige/confirma o tipo [--projeto P]; interno tira do ar
+    python atas.py formato <id> <f>       formato da reunião de cliente: descoberta, demo, alinhamento, nenhum
     python atas.py legado-proteger        plano para as atas da v1 no ar [--aplicar]
     python atas.py despublicar <id>       apaga a página do Worker
     python atas.py publicadas             o que está no Worker
@@ -89,8 +90,11 @@ def c_listar(a):
 def c_mostrar(a):
     s = achar(a.id)
     segs, at = _ata_de(s)
+    extra = ""
+    if s.tipo == "cliente":
+        extra += f" · formato {s.m.get('formato') or '— (não informado)'}"
     print(f"# {s.m.get('titulo')}\n{s.resumo_curto()} · {s.m.get('projeto') or 'sem projeto'}"
-          f" · estado {s.m.get('estado')}\npasta: {s.pasta}\n")
+          f" · estado {s.m.get('estado')}{extra}\npasta: {s.pasta}\n")
     if at:
         from render import markdown
         md = markdown(at, segs)
@@ -294,6 +298,24 @@ def c_tipo(a):
     print(f"{s.id}: {antes} -> {a.tipo}" + (f" · projeto {s.m['projeto']}" if a.projeto else ""))
     if _sessao.ler_json(s.caminho("ata.json")):
         pipeline.reaplicar(s)                    # tipo interno tira a página do ar
+
+
+def c_formato(a):
+    """Corrige o formato da reunião (descoberta/demo/alinhamento; "nenhum" apaga). Só muda a
+    leitura do Raio-X em reunião de cliente: a faixa da fatia de fala e as perguntas abertas."""
+    s = achar(a.id)
+    novo = None if a.formato in ("nenhum", "nao-sei", "não-sei") else a.formato
+    if novo is not None and novo not in _sessao.FORMATOS:
+        sys.exit(f"formato inválido: use {', '.join(_sessao.FORMATOS)} ou nenhum")
+    antes = s.m.get("formato")
+    s.m["formato"] = novo
+    s.salvar()
+    print(f"{s.id}: formato {antes or '—'} -> {novo or '—'}")
+    if s.tipo != "cliente":
+        print(f"  (a reunião é {TIPOS.get(s.tipo, s.tipo)}: o formato só pesa no Raio-X de cliente)")
+    if s.status_etapa("raio_x") == "ok" and not a.sem_raio_x:
+        raio_x(s)
+        print("  Raio-X refeito com o formato novo (atas.py fala <id> mostra a leitura)")
 
 
 def c_legado_proteger(a):
@@ -632,6 +654,11 @@ def main(argv=None):
     p.add_argument("tipo")
     p.add_argument("--projeto")
     p.set_defaults(fn=c_tipo)
+    p = sub.add_parser("formato", help="formato da reunião de cliente (Raio-X): descoberta, demo, alinhamento ou nenhum")
+    p.add_argument("id")
+    p.add_argument("formato")
+    p.add_argument("--sem-raio-x", action="store_true", help="não refazer o Raio-X agora")
+    p.set_defaults(fn=c_formato)
     p = sub.add_parser("legado-proteger")
     p.add_argument("--aplicar", action="store_true")
     p.set_defaults(fn=c_legado_proteger)

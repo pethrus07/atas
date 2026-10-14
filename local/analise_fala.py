@@ -671,7 +671,7 @@ def compromissos(segments, nomes=None, janela_s=20, max_frases=15):
 
 
 # ── fatia de fala por tipo de reunião (v3) ──────────────────────────────────────────────────
-FORMATOS = ("descoberta", "demo", "alinhamento")
+from sessao import FORMATOS  # noqa: E402  (descoberta · demo · alinhamento; um lugar só)
 
 
 def numero_de_falantes(segments, participantes=None):

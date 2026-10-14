@@ -46,6 +46,12 @@ TIPOS = {
 }
 # Só reunião de cliente sai da máquina (decisão 1 de 30/09/2026).
 TIPOS_PUBLICAVEIS = {"cliente"}
+# Áudio importado do celular sem tipo (14/10/2026): o tipo é escolha obrigatória do Pedro (regra de
+# 30/09), então a reunião fica "pendente" — sem entregável, sem publicação, sem avaliação — até
+# `atas.py tipo <id> <tipo>`. Não entra em TIPOS: a janela nunca oferece "pendente".
+TIPO_PENDENTE = "pendente"
+# Formato da reunião de cliente (opcional; o Raio-X usa para a faixa da fatia de fala, §17).
+FORMATOS = ("descoberta", "demo", "alinhamento")
 
 BATIDA_S = 5          # intervalo da batida enquanto grava
 ORFA_APOS_S = 45      # batida mais velha que isso = gravador morto
@@ -113,13 +119,20 @@ class Sessao:
 
     # ── criação e leitura ──────────────────────────────────────────────────
     @classmethod
-    def criar(cls, titulo, tipo, projeto="", participantes=None, raiz=None):
-        if tipo not in TIPOS:
+    def criar(cls, titulo, tipo, projeto="", participantes=None, raiz=None, formato=None,
+              quando=None, pendente_ok=False):
+        """`formato`: descoberta/demo/alinhamento (só faz sentido em cliente; vazio = "não sei").
+        `quando`: datetime do início (importação de áudio; padrão = agora). `pendente_ok`: aceita o
+        tipo "pendente" (só o importador do celular usa)."""
+        if tipo not in TIPOS and not (pendente_ok and tipo == TIPO_PENDENTE):
             raise ValueError(f"tipo inválido: {tipo!r} (use {', '.join(TIPOS)})")
+        if formato and formato not in FORMATOS:
+            raise ValueError(f"formato inválido: {formato!r} (use {', '.join(FORMATOS)})")
         raiz = pathlib.Path(raiz) if raiz else SALVAS
         raiz.mkdir(parents=True, exist_ok=True)
-        titulo = (titulo or "").strip() or f"Reunião {time.strftime('%d/%m/%Y %H:%M')}"
-        base_id = novo_id(titulo)
+        quando_txt = (quando or _dt.datetime.now()).strftime("%d/%m/%Y %H:%M")
+        titulo = (titulo or "").strip() or f"Reunião {quando_txt}"
+        base_id = novo_id(titulo, quando)
         sid, n = base_id, 2
         while (raiz / sid).exists():          # duas reuniões no mesmo minuto
             sid, n = f"{base_id}-{n}", n + 1
@@ -132,6 +145,7 @@ class Sessao:
             "tipo": tipo,
             "projeto": (projeto or "").strip(),
             "participantes": [p.strip() for p in (participantes or []) if p and p.strip()],
+            "formato": formato or None,
             "criado": agora_iso(),
             "inicio": None,
             "fim": None,
@@ -181,6 +195,19 @@ class Sessao:
     @property
     def audio_dir(self):
         return self.pasta / "audio"
+
+    @property
+    def celular(self):
+        """Reunião presencial importada de um arquivo do celular (um canal só, todos juntos)."""
+        return self.m.get("origem") == "celular"
+
+    def audio_da_voz(self):
+        """O áudio em que estão as falas de "Você" (para a voz do Raio-X): o .pcm do microfone
+        durante o processamento, o mic.opus depois, ou o arquivo único do celular."""
+        for p in (self.mic_pcm, self.audio_dir / "mic.opus", self.audio_dir / "celular.opus"):
+            if p.exists():
+                return p
+        return self.audio_dir / "mic.opus"
 
     def participantes_remotos(self):
         return list(self.m.get("participantes") or [])

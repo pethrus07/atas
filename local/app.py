@@ -37,9 +37,10 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent))
 import config as _config  # noqa: E402
 import record  # noqa: E402  (importado na thread principal: segura o COM do processo)
 import sessao as _sessao  # noqa: E402
-from sessao import TIPOS, Sessao  # noqa: E402
+from sessao import FORMATOS, TIPOS, Sessao  # noqa: E402
 
 LOG = pathlib.Path(__file__).parent / "atas.log"
+FORMATO_NAO_SEI = "não sei"
 VERMELHO = "#C0392B"
 CINZA = "#6E6E69"
 VERDE = "#3A5A50"
@@ -91,6 +92,11 @@ def _nivel_pct(rms):
 def _fmt_tempo(seg):
     seg = int(seg)
     return f"{seg // 3600:02d}:{seg % 3600 // 60:02d}:{seg % 60:02d}"
+
+
+def formato_da_tela(tipo, escolha):
+    """O que vai para o sessao.json: o formato só vale em cliente; "não sei" = None."""
+    return escolha if tipo == "cliente" and escolha in FORMATOS else None
 
 
 def _curto(nome):
@@ -222,9 +228,25 @@ class App(tk.Tk):
         self.v_tipo = tk.StringVar(value="")
         linha = ttk.Frame(f)
         linha.pack(fill="x", pady=(_p(6), 0))
+        # formato (14/10/2026): só aparece em cliente, uma linha discreta, "não sei" de padrão.
+        # Afina a faixa da fatia de fala no Raio-X (descoberta 35–50%; demo/alinhamento 45–60%).
+        self.v_formato = tk.StringVar(value=FORMATO_NAO_SEI)
+        l_formato = ttk.Frame(f)
+        ttk.Label(l_formato, text="Formato", style="Sub.TLabel").pack(side="left")
+        ttk.Combobox(l_formato, textvariable=self.v_formato, state="readonly", width=12,
+                     values=[FORMATO_NAO_SEI, *FORMATOS], font=(self.fonte, 9)
+                     ).pack(side="left", padx=(_p(8), 0))
+
+        def tipo_escolhido():
+            self.l_falta.configure(text="")
+            if self.v_tipo.get() == "cliente":
+                l_formato.pack(anchor="w", after=linha, pady=(_p(8), 0))
+            else:
+                l_formato.pack_forget()
+                self.v_formato.set(FORMATO_NAO_SEI)
         for k, rot in TIPOS.items():
             ttk.Radiobutton(linha, text=rot.split(" (")[0].split(" /")[0], value=k,
-                            variable=self.v_tipo, command=lambda: self.l_falta.configure(text="")
+                            variable=self.v_tipo, command=tipo_escolhido
                             ).pack(side="left", padx=(0, _p(14)))
         self.l_falta = ttk.Label(f, text="", style="Alerta.TLabel")
         self.l_falta.pack(anchor="w", pady=(0, _p(14)))
@@ -284,6 +306,7 @@ class App(tk.Tk):
             return
         self.ctx = {"titulo": self.v_titulo.get().strip(), "tipo": self.v_tipo.get(),
                     "projeto": self.v_projeto.get().strip(),
+                    "formato": formato_da_tela(self.v_tipo.get(), self.v_formato.get()),
                     "participantes": [p.strip() for p in self.v_part.get().split(",") if p.strip()]}
         self.cfg["estruturar"] = self.v_claude.get()
         self.cfg["ao_vivo"] = self.v_ao_vivo.get()
@@ -302,7 +325,8 @@ class App(tk.Tk):
 
     def _comecar(self, disp):
         c = self.ctx
-        self.s = Sessao.criar(c["titulo"], c["tipo"], c["projeto"], c["participantes"])
+        self.s = Sessao.criar(c["titulo"], c["tipo"], c["projeto"], c["participantes"],
+                              formato=c.get("formato"))
         self.g = record.Gravador(self.s, disp)
         self.g.iniciar()
         _log(f"gravando {self.s.id} · mic {disp['mic'].name} "

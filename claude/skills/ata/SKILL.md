@@ -47,6 +47,15 @@ Invoke-Expression "$A mostrar ultima"
   primeiro, em uma linha, com o motivo. Se a ata está `pendente` (Claude falhou no fim da
   gravação): `processar <id> --forcar estrutura`.
 
+### 1b. Formato (só cliente, e só se estiver vazio)
+- `mostrar` imprime `formato` na linha de cabeçalho. Se for cliente e vier "— (não informado)",
+  **proponha** um, com o motivo em uma linha, e pergunte junto com o passo 2 (uma pergunta só):
+  **descoberta** (o cliente explica o problema, o Pedro pergunta), **demo** (o Pedro mostra o
+  sistema), **alinhamento** (status, combinados, próximos passos). Na dúvida, "não sei" é
+  resposta válida: deixe vazio.
+- Com o sim dele: `formato <id> <descoberta|demo|alinhamento>`. O comando refaz o Raio-X (a
+  faixa da fatia de fala muda: descoberta 35–50%, demo/alinhamento 45–60%, vazio 35–55%).
+
 ### 2. Quem é quem (sempre antes de tudo)
 - Mostre só os rótulos que importam: com nome deduzido "a confirmar", ou sem nome e com fala
   relevante. Para cada um, a evidência (`[mm:ss] trecho`).
