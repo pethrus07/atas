@@ -41,6 +41,21 @@ Reunião de **cliente** mostra uma linha discreta **Formato** (não sei · desco
 alinhamento). É opcional: só afina a leitura do Raio-X. Dá para corrigir depois com
 `atas.py formato <id> demo`.
 
+## Marcar um momento
+Ouviu algo que importa (um valor, um prazo, um "fechado")? Aperte **Ctrl+Alt+M**: funciona com o
+Meet/Chrome na frente, sem trazer a janela do Atas. Ou clique **Marcar momento** na tela de gravação.
+Sem som e sem popup; a tela (e o título na barra de tarefas) mostra "N momentos marcados". Apertar de
+novo em até 2 s conta como a mesma marca.
+
+Na ata **interna**, a seção **Momentos marcados** vem no topo: para cada marca, o horário (clique leva
+ao trecho na transcrição), o que foi dito de importante e a fala literal que sustenta; o trecho
+analisado vai de 45 s antes a 15 s depois (você aperta depois de ouvir). Marca em trecho sem nada claro
+aparece como "marcado — sem decisão clara no trecho". O entregável do cliente **não** leva marcas.
+
+Lembrou depois? `marcar <id> 40:10 1:02:03` e `marcas <id>`; para a ata ler o trecho,
+`processar <id> --forcar estrutura`. Áudio do celular: `importar <arquivo> --marcas "12:30,40:10"`.
+O atalho muda em `marcar_atalho` no config (detalhe: [ARQUITETURA §20](docs/ARQUITETURA.md)).
+
 ## Reunião presencial (gravada no celular)
 Uma conversa sem chamada não passa pelo PC. Grave no celular e traga o arquivo:
 
@@ -101,12 +116,13 @@ Invoke-Expression "$A mostrar ultima"    # a ata, lacunas e etapas
 Invoke-Expression "$A buscar gateway --pessoa Mauro"
 Invoke-Expression "$A retomar"           # gravação interrompida
 Invoke-Expression "$A importar <áudio>"  # reunião presencial gravada no celular
+Invoke-Expression "$A marcar ultima 40:10"   # marca um momento depois da reunião; `marcas ultima` lista
 ```
 Todos os comandos: `atas.py --help` e [docs/ARQUITETURA.md §11](docs/ARQUITETURA.md#11--receitas).
 
 ## Testes
 ```powershell
-C:\Users\olive\.venvs\faster-whisper\Scripts\python.exe -m pytest tests -q   # 121 testes (116 rápidos + 5 lentos, -m "not lento" pula), ~70 s
+C:\Users\olive\.venvs\faster-whisper\Scripts\python.exe -m pytest tests -q   # 137 testes (131 rápidos + 6 lentos, -m "not lento" pula), ~70 s
 cd worker; npm test                                                          # 10 testes do Worker (Miniflare)
 ```
 

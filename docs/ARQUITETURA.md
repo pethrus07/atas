@@ -80,6 +80,9 @@ atas/
 │   ├── analise_fala.py        Raio-X da fala + nota do Sinapse
 │   ├── legado.py              importa as atas soltas de antes da v2
 │   ├── celular.py             reunião presencial: arquivo do celular → sessão de um canal (§18)
+│   ├── treino.py              modo treino: ensaio sozinho, Raio-X de monólogo (§19)
+│   ├── marcas.py              marcar momento: marcas no sessao.json, trecho, prompt (§20)
+│   ├── atalho.py              atalho global Ctrl+Alt+M (RegisterHotKey numa thread própria) (§20)
 │   ├── config.py              padrões + config.json + onde está o claude.exe
 │   ├── vocabulario.json       termos por tipo e por projeto (hotwords do Whisper)
 │   ├── config.example.json    modelo do config (o real, com token, fica FORA do git)
@@ -91,7 +94,7 @@ atas/
 │   ├── wrangler.toml          conta FIXADA, D1, cron, ambiente homolog
 │   ├── package.json + test/   só para os testes (Miniflare); o deploy não tem build
 ├── claude/skills/ata/         a skill /ata (junction em ~/.claude/skills/ata)
-├── tests/                     pytest: 108 testes (4 lentos: fumaça, gravação e celular reais, -m lento)
+├── tests/                     pytest: 137 testes (6 lentos: fumaça, gravação, celular e atalho reais, -m lento)
 ├── atas-salvas/               FORA DO GIT — uma pasta por reunião (§8)
 ├── fala-analise/              FORA DO GIT — histórico e painel do Raio-X
 └── docs/                      este arquivo + BRIEFING-V2.md
@@ -306,6 +309,11 @@ obrigatória para gravar.**
 | `audio_reter_dias` | `30` | retenção do áudio local |
 | `publicacao_reter_dias` | `90` | expiração da página do cliente |
 | `ao_vivo`, `ao_vivo_janela_s` | `false`, `30` | §12 |
+| `marcar_atalho` | `ctrl+alt+m` | atalho global do "marcar momento" (§20); modificadores ctrl/alt/shift/win + letra, dígito ou F1–F24 |
+| `marcar_som` | `false` | bipe discreto do Windows a cada marca (§20) |
+
+Variáveis de ambiente: `ATAS_SALVAS` troca a pasta das reuniões (ensaio do CLI numa **cópia**, §20);
+`SINAPSE_VAULT` troca o vault (§17).
 
 ---
 
@@ -369,6 +377,10 @@ Raio-X se ele já tinha rodado.
 **Reunião presencial gravada no celular.** `importar <arquivo> --titulo T [--tipo] [--participantes
 "A,B"] [--formato] [--data "AAAA-MM-DD HH:MM"]`, ou `vigiar <pasta> [--continuo]`. Depois, no /ata,
 `confirmar <id>` (acertou quem é você) ou `falantes <id> "Participante 2=Você"` (errou). §18.
+
+**Marcar um momento depois da reunião.** `marcar <id> 40:10 1:02:03` (`--remover` tira), `marcas <id>`
+lista o que a ata achou em cada um; para a ata ler o trecho: `processar <id> --forcar estrutura`. Áudio
+do celular: `importar <arquivo> --marcas "12:30,40:10"`. §20.
 
 **Homologação do Worker (uma vez).** Em `worker/`:
 ```powershell
@@ -774,3 +786,92 @@ a nota ("abrir mão da partição") com o trecho da nota.
 - Em 3 min (~450 palavras) cada muleta pesa ~2 por mil: a meta vale como direção, não como prova.
 - Calibrado em voz sintética; falta o primeiro treino real do Pedro com o fone.
 - Sem indicador de ritmo ao vivo (ver MELHORIAS 19).
+
+---
+
+## 20 · Marcar momento (14/10/2026)
+
+Pedido do Pedro, ideia do Granola: enquanto grava, ele aperta um atalho na hora em que algo importa, e
+a ata dá peso àquele trecho. Código em `local/marcas.py` (dado, trecho, prompt), `local/atalho.py`
+(atalho global), `app.py::_ligar_atalho/_marcar`, `ata.py::sincronizar_momentos/auditar_momentos`,
+`render.py::_secao_momentos`, `atas.py::c_marcar/c_marcas`; testes em `tests/test_marcas.py`.
+
+**Na gravação.** **Ctrl+Alt+M** (config `marcar_atalho`) funciona com o Meet/Chrome em foco e a janela
+do Atas atrás: `RegisterHotKey` via ctypes, sem dependência nova, numa **thread própria** — o
+`WM_HOTKEY` de um atalho com `hWnd` nulo vai para a fila da thread que registrou, e só ela consegue
+liberá-lo (`UnregisterHotKey` no fim do `GetMessageW`, depois de um `WM_QUIT` mandado pelo `parar()`).
+`MOD_NOREPEAT` evita a repetição da tecla segurada. A thread só anota `Gravador.decorrido()` e repassa
+para a fila da janela; quem grava é a thread do Tk (a mesma que salva o resto do manifesto). Também há o
+link **Marcar momento** acima do "Parar". Só na reunião (o treino não tem marca).
+
+Feedback silencioso (regra de UI: pouca informação, muito respiro): uma linha discreta "Marcar momento
+· Ctrl+Alt+M" e, depois da primeira marca, "N momentos marcados" à direita; o título da janela (que
+aparece na barra de tarefas com o Meet na frente) ganha "· N marcados". Sem popup, sem roubar foco, sem
+som (`marcar_som: true` liga um bipe do Windows). Se outro programa já registrou o atalho
+(erro 1409), a tela diz isso em vermelho e o link continua valendo.
+
+**Colisões do Ctrl+Alt+M** (conferido em 14/10): o Windows entrega o atalho registrado antes do
+programa em foco, então durante a gravação nenhum programa recebe Ctrl+Alt+M. Google Meet: a ajuda
+oficial usa Ctrl+Alt+C/P/H/S/I/X/K/J, não M (sites de terceiros citam Ctrl+Alt+M como "minimizar vídeo"
+ou "silenciar todos", sem confirmação; se existir, só não dispara enquanto grava). Word: Ctrl+Alt+M =
+novo comentário (indisponível enquanto grava). VS Code e Windows: nada no padrão. Teclados desta
+máquina (ABNT2 e US): AltGr+M não gera caractere.
+
+**O dado.** `sessao.json` → `"marcas": [{"t": 750.2, "criado": ISO, "origem": "atalho"}]`, `t` em
+segundos desde o início da gravação (a régua dos timestamps da transcrição: o gravador alinha o PCM ao
+relógio). Escrita atômica com fsync (`sessao.escrever_json`), como o resto: sobrevive a queda. Sem
+rótulo. **Um tipo só**: o duplo toque = "importante" foi descartado (gesto escondido, fácil de errar
+com a cabeça na conversa, e a marca já é o "importante"); toques a menos de 2 s viram uma marca só.
+Origens: `atalho`, `botao`, `depois` (`atas.py marcar`), `celular` (`importar --marcas`).
+
+**Na ata.** Trecho = **45 s antes a 15 s depois** (ele aperta depois de ouvir). `estruturar.prompt`
+lista as marcas (`M1 em [12:30] → trecho de [11:45] a [12:45]`) e pede: (1) toda decisão, valor,
+compromisso ou prazo do trecho nas listas normais, com citação literal; (2) a lista `momentos`, uma
+por marca (`o_que`, `tipo`, `t`, `citacao`), com `tipo: "nada"` e nulls se o trecho não tem nada
+claro. Com marca, `momentos` vira obrigatório no `--json-schema` (`estruturar.esquema`).
+`VERSAO_PROMPT` = "4". **Reunião em blocos** (> 60 min): cada marca vai só ao bloco em que caiu
+(`marcas.do_bloco`, ids globais M1…Mn; a sobra de 120 s dos blocos cobre a janela) e `juntar` soma.
+
+A auditoria é a das listas, mais estrita: a citação tem de estar literalmente numa fala (`ata._achar`)
+**e** essa fala tem de começar dentro do trecho (±5 s). Não achou ou está fora → o conteúdo é
+descartado (`citacao_descartada`, `problemas`) e o momento vira "marcado — sem decisão clara no
+trecho". Depois cada momento ganha `itens`: os itens verificados da ata cujo `t` cai no trecho
+(`na ata: D3, V2`) — ligação calculada, não escrita pelo Claude. A ata `pendente` (sem Claude) já
+mostra as marcas, como "trecho ainda não lido pelo Claude". Marca acrescentada depois
+(`marcar`) entra como pendente no `render`/`processar` (`sincronizar_momentos` mantém o que já foi
+analisado, casado pelo instante); `processar <id> --forcar estrutura` lê o trecho.
+
+**Render.** Ata interna (`.md`, `.html`, `.pdf`): seção **Momentos marcados** no topo, antes das
+decisões; o horário é link para a fala do começo do trecho na transcrição (um script de 1 linha abre o
+`<details>` antes de pular). Entregável do cliente: nada de marca, nem âncora; os "trechos citados"
+continuam saindo só das listas. O `/ata` começa pelas marcas (passo 1a da skill).
+
+**CLI.** `marcar <id> <mm:ss>... [--remover]` (recusa a sessão que está sendo gravada, para não brigar
+com a janela pelo `sessao.json`; recusa horário depois do fim), `marcas <id>`, `importar <arq>
+--marcas "12:30,40:10"`. `ATAS_SALVAS=<pasta>` aponta o CLI para uma **cópia** das reuniões (ensaio).
+
+**Medido em 14/10/2026 numa cópia da reunião de 05/10 com o Valter** (190 min, `ATAS_SALVAS` em pasta
+temporária, `SINAPSE_VAULT` vazio; a original conferida por hash antes/depois, nada publicado). Três
+marcas por `atas.py marcar`: 46:10 (conversa política), 1:14:50 (logo depois do "300" do piloto) e
+2:36:10 (logo depois do "600 quando subir" e do "10 a 15 dias"). Em blocos, as duas primeiras foram ao
+bloco 2 e a terceira ao bloco 4. Resultado (473 s, US$ 2,26 os 5 blocos + consolidação):
+
+| Marca | O que a ata trouxe | Na ata |
+|---|---|---|
+| M1 46:10 | marcado — sem decisão clara no trecho (o Claude devolveu `nada`) | — |
+| M2 1:14:50 | "O piloto (desenvolvimento da esteira, do front-end e de uma máquina) foi fechado em 300." · citação [1:14:42] | D9, V14, S19 |
+| M3 2:36:10 | "Ficou combinado que 600 serão pagos quando o app for publicado na Play Store, e que a primeira parcela será paga em 10 a 15 dias." · citação [2:35:28] | D13, D14, E10, E15, V24 |
+
+Conferido na transcrição: o "300" está em [1:14:37] e o "10 a 15 dias" em [2:36:00], ambos dentro dos
+trechos. A tela de gravação foi fotografada com o contador (gravador falso, atalho real registrado e
+liberado) e conferida contra a regra de UI.
+
+**Limites conhecidos.**
+- A auditoria confere a **citação**, não a frase `o_que` inteira (é prosa do Claude, como o resumo). No
+  M2 o "300" foi dito numa fala de uma palavra só, que não pode ser citada (mínimo de 3 palavras), e a
+  citação escolhida sustenta o escopo do piloto, não o valor; o valor está no V14, que tem citação própria.
+- Precisão do instante ~1 s (relógio do gravador × PCM alinhado); a janela de 45 s cobre. Se ele
+  apertar mais de 45 s depois do que ouviu, o trecho não pega: marque com `atas.py marcar` no horário certo.
+- Um tipo só de marca e sem rótulo; marca não aparece no `ao-vivo.md`.
+- O atalho é global só durante a gravação; o Ctrl+Alt+M fica indisponível para outros programas nesse
+  tempo (Word: comentário). Falta a primeira reunião real marcada ao vivo.

@@ -47,6 +47,20 @@ Invoke-Expression "$A mostrar ultima"
   primeiro, em uma linha, com o motivo. Se a ata está `pendente` (Claude falhou no fim da
   gravação): `processar <id> --forcar estrutura`.
 
+### 1a. Momentos marcados (comece por aqui, se houver)
+- O Pedro marcou na hora o que importava (Ctrl+Alt+M ou o botão). `marcas <id>` lista cada
+  marca com o que a ata achou no trecho (45 s antes a 15 s depois); a seção "Momentos marcados"
+  também abre o `mostrar`. **Apresente isto antes de tudo**, uma linha por marca: horário, o que
+  foi dito, a citação, e em que item da ata virou (`na ata: D3, V2`).
+- Marca **"sem decisão clara no trecho"** ou com **citação descartada**: leia você o trecho na
+  transcrição (`mostrar <id> --transcricao`, do horário −45 s ao +15 s) e diga o que acha que ele
+  marcou, com a fala literal; pergunte se é isso. Nunca preencha sem a fala.
+- Marca **pendente** ("trecho ainda não lido pelo Claude", acrescentada depois com `marcar`):
+  ofereça `processar <id> --forcar estrutura`.
+- Decisão, valor, compromisso ou prazo de um trecho marcado que **não** está nas listas da ata
+  é a lacuna mais importante da revisão: proponha o item com citação e `t` (passo 4b).
+- Ele lembrou de outro momento? `marcar <id> <mm:ss>` (e `--remover` para tirar).
+
 ### 1b. Formato (só cliente, e só se estiver vazio)
 - `mostrar` imprime `formato` na linha de cabeçalho. Se for cliente e vier "— (não informado)",
   **proponha** um, com o motivo em uma linha, e pergunte junto com o passo 2 (uma pergunta só):
@@ -56,7 +70,20 @@ Invoke-Expression "$A mostrar ultima"
 - Com o sim dele: `formato <id> <descoberta|demo|alinhamento>`. O comando refaz o Raio-X (a
   faixa da fatia de fala muda: descoberta 35–50%, demo/alinhamento 45–60%, vazio 35–55%).
 
-### 1c. Reunião presencial do celular (`origem: celular` no `mostrar`)
+### 1c. Projeto (cliente e carreira, só se estiver vazio)
+- O sinapse-app mostra os compromissos do Pedro na tela **Frentes** lendo `ata.json` +
+  `sessao.json`, e a reunião só cai na frente certa se `sessao.json.projeto` tiver o **nome da
+  nota do vault** (o app casa o slug com o nome do arquivo da nota, o título ou a última pasta
+  de `pastas:`). Ex.: `toninho-motores`, `celiware-ihm`, `atas`, `desbravando`,
+  `instituto-automacao`.
+- Se o tipo é `cliente` ou `carreira` e o `mostrar` diz "sem projeto": **proponha** um, casando
+  título, participantes e conteúdo com as notas de `C:\Users\olive\Projetos\sinapse\03-PROJETOS`
+  e `04-NEGOCIO` (**só leitura** do vault), com o motivo em uma linha. Se a reunião cobriu vários
+  projetos, diga isso e sugira o principal.
+- Pergunte junto com o formato/quem é quem (uma pergunta só). Com o sim dele:
+  `tipo <id> <tipo> --projeto <slug>`. Não mexa em reuniões antigas por conta própria.
+
+### 1d. Reunião presencial do celular (`origem: celular` no `mostrar`)
 - Um canal só: **"Você" foi estimado pela voz** (amostra de referência ou tom) e está "a
   confirmar"; o Raio-X e a avaliação ficam `pendente` até ele confirmar. Pergunte isso
   **primeiro**, mostrando 2–3 falas de "Você" com `[mm:ss]` e a evidência do `mostrar`.
