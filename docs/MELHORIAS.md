@@ -28,6 +28,7 @@ Valter, sessão `2026-10-05_2303_alinhamento-valter`), conferida item a item con
 | 18 | Reunião presencial gravada no celular: `importar`, `vigiar`, "Você" pela amostra de voz e a confirmar, tipo pendente | ✅ 14/10 · ⏳ falta calibrar em áudio de celular real | `celular.py`, `ARQUITETURA.md` §18, `tests/test_celular.py` |
 | 19 | Modo treino: ensaio sozinho (reunião ou explicar tema), só o microfone, Raio-X de monólogo (ritmo, pausas, muletas, entonação) contra o alvo, o último treino e as reuniões, retorno do Claude auditado; fora do Raio-X das reuniões e do vault | ✅ 14/10 · ⏳ falta o primeiro treino real e o ritmo ao vivo | `treino.py`, `app.py::treino_*`, `ARQUITETURA.md` §19, `tests/test_treino.py` |
 | 20 | Marcar momento (ideia do Granola): Ctrl+Alt+M global ou botão durante a gravação → `marcas` no sessao.json; o Claude prioriza o trecho (45 s antes, 15 s depois); seção "Momentos marcados" auditada no topo da ata interna, fora do entregável; `marcar`/`marcas` no CLI, `importar --marcas` | ✅ 14/10 · ⏳ falta a primeira reunião real marcada ao vivo | `marcas.py`, `atalho.py`, `app.py::_ligar_atalho`, `ARQUITETURA.md` §20, `tests/test_marcas.py` |
+| 21 | Daily da Parresia: `formato daily` (formato por tipo), fora de toda medição com trava no ponto de escrita; ata `atas/daily@1` (com você, frentes rastreadas, por pessoa, card conferido a ±60 s, menção não tratada); quem falou sem digitar nomes (teto próprio + rodada); "Gravar a próxima daily"; `atas.py daily` | ✅ 19/10 · ⏳ não calibrado: falta a primeira daily de 1 h gravada de verdade | `daily.py`, `sessao.fora_da_medicao`, `ARQUITETURA.md` §21, `tests/test_daily.py` |
 | — | Worker v2 no ar (sem ele, nenhuma ata é publicada; a de 05/10 está parada) | ⏳ o login do wrangler virou a conta pessoal | `worker/` |
 | — | Marcar trechos fora de pauta | ⏳ parcial: o prompt tira de resumo e itens; falta marcar na transcrição interna | — |
 
@@ -155,3 +156,21 @@ Pedido do Pedro ("gosto do modo treino para reunião"). Janela: link "Treinar" �
   modo treino ser usado algumas vezes.
 - **Exercícios guiados** da pesquisa (leitura ritmada a 4,5 → roteiro de 3 tópicos a 5,0 → explicação
   livre a 4,8): hoje o alvo é escolhido à mão em "Mais opções"; um texto de leitura pronto ajudaria.
+
+## 21. Daily da Parresia (19/10/2026) · ✅ · ⏳ não calibrado
+Pedido do Pedro: dailies de >1 h com 7+ pessoas, rodada pelo nome, ele fala pouco (09/10: 8,9%); quer achar
+quem disse o quê sobre qual card (o SUP-953 do Rogério se perdeu numa daily não gravada) sem digitar nomes, e
+tem duas dailies seguidas. Feito: `formato daily` (formato por tipo), fora de toda medição com trava no ponto
+de escrita (`sessao.fora_da_medicao`), ata `atas/daily@1`, teto próprio da diarização + rodada como pista,
+"Gravar a próxima daily", `atas.py daily`, `formato <id> daily` para reunião já medida, `/ata` com roteiro
+curto (passo 1e). Detalhe, números e limites em `ARQUITETURA.md` §21.
+**Pendente:**
+- **Calibrar** na primeira daily de 1 h gravada de verdade, sabendo quantas pessoas falaram: `calibrar <id>
+  --daily` (teto 1,5% / 15 s / 12 vozes), a janela da rodada (10 s) e a do card (±60 s) são palpite.
+- **Completar `daily_equipe`** no `config.json` (lista inicial de 11 nomes, com apelidos usados: "Lena"…).
+- **Decidir a 09/10** (`2026-10-09_0935_reuniao-metodo`): aplicar `formato daily`? Tira a linha dela do
+  Raio-X (com backup) e refaz a nota do vault; não foi aplicado.
+- A rodada não foi medida numa rodada de verdade (a 09/10 é a apresentação do método: 2 pistas, 1 em
+  conflito com o nome deduzido pelo texto).
+- A diarização da daily roda na CPU: ~835 s para 46 min de áudio (09/10), ou seja ~18 min a mais numa daily de
+  1 h antes da ata sair.

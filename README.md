@@ -41,6 +41,25 @@ Reunião de **cliente** mostra uma linha discreta **Formato** (não sei · desco
 alinhamento). É opcional: só afina a leitura do Raio-X. Dá para corrigir depois com
 `atas.py formato <id> demo`.
 
+## Daily da Parresia
+Tipo **Parresia** mostra a mesma linha discreta **Formato**: **reunião** (padrão) ou **daily**. Na daily:
+- **Nada é medido**: sem Raio-X da fala, sem linha no histórico, sem nota no Sinapse, sem avaliação
+  interna. Está no código (não é convenção): mesmo `atas.py fala` recusa.
+- **Não precisa digitar ninguém.** As vozes saem da separação automática com um teto próprio da daily, e
+  os nomes saem da **rodada** ("Rogério, e você?" seguido de outra voz) como **pista**: você confirma no
+  `/ata`. A equipe (`daily_equipe`) e as frentes que você acompanha (`frentes_rastreadas`, hoje Frota WP
+  SUP-953…959) ficam no `config.json`: complete a equipe uma vez.
+- A ata da daily traz primeiro **Com você** (o que foi pedido a você ou toca suas frentes) e as
+  **frentes**, depois **por pessoa** (fez · vai fazer · travado, com o card) e as decisões reais. Card
+  só fica se o número foi dito perto da fala; card de frente dito que não virou item aparece como
+  lacuna "menção não tratada".
+- Duas dailies seguidas: na tela final, **Gravar a próxima daily** já grava, com "(2)" no título.
+- Achar depois quem disse o quê: `daily SUP-953`, `daily deploy --pessoa Rogério --frente "Frota WP"
+  --desde 2026-10-01`.
+
+Os números do teto da daily (`daily_diar`) são **palpite** até calibrar numa daily real de 1 h
+(`calibrar <id> --daily`). Detalhe: [ARQUITETURA §21](docs/ARQUITETURA.md).
+
 ## Marcar um momento
 Ouviu algo que importa (um valor, um prazo, um "fechado")? Aperte **Ctrl+Alt+M**: funciona com o
 Meet/Chrome na frente, sem trazer a janela do Atas. Ou clique **Marcar momento** na tela de gravação.
@@ -117,12 +136,13 @@ Invoke-Expression "$A buscar gateway --pessoa Mauro"
 Invoke-Expression "$A retomar"           # gravação interrompida
 Invoke-Expression "$A importar <áudio>"  # reunião presencial gravada no celular
 Invoke-Expression "$A marcar ultima 40:10"   # marca um momento depois da reunião; `marcas ultima` lista
+Invoke-Expression "$A daily SUP-953"        # quem disse o quê sobre o card, só nas dailies
 ```
 Todos os comandos: `atas.py --help` e [docs/ARQUITETURA.md §11](docs/ARQUITETURA.md#11--receitas).
 
 ## Testes
 ```powershell
-C:\Users\olive\.venvs\faster-whisper\Scripts\python.exe -m pytest tests -q   # 137 testes (131 rápidos + 6 lentos, -m "not lento" pula), ~70 s
+C:\Users\olive\.venvs\faster-whisper\Scripts\python.exe -m pytest tests -q   # 157 testes (151 rápidos + 6 lentos, -m "not lento" pula), ~70 s
 cd worker; npm test                                                          # 10 testes do Worker (Miniflare)
 ```
 

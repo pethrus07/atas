@@ -34,7 +34,8 @@ Invoke-Expression "$A mostrar ultima"
 6. **Credencial nunca aparece no chat.** A senha da página do cliente fica no `sessao.json`;
    diga onde está, não a imprima (a janela do Atas tem o botão de copiar).
 7. **Única escrita automática no Sinapse:** a nota `08-CRESCIMENTO/fala-raio-x.md`, que a
-   etapa `raio_x` regrava sem título de reunião. Todo o resto do vault é proposta.
+   etapa `raio_x` regrava sem título de reunião. Todo o resto do vault é proposta. A **daily**
+   (`formato daily`) nunca entra nela: fica fora de toda medição (passo 1e).
 8. **Avaliação interna nunca vai ao cliente.** `avaliacao-interna*.md` fica na pasta da sessão;
    o render não lê esse arquivo. Fala de conversa pessoal (política, renda) não sai da máquina.
 
@@ -69,6 +70,8 @@ Invoke-Expression "$A mostrar ultima"
   resposta válida: deixe vazio.
 - Com o sim dele: `formato <id> <descoberta|demo|alinhamento>`. O comando refaz o Raio-X (a
   faixa da fatia de fala muda: descoberta 35–50%, demo/alinhamento 45–60%, vazio 35–55%).
+- Parresia com cara de daily (rodada pelo nome, muitas vozes, status de cards) e `formato reunião`:
+  **pergunte** se é daily. Nunca converta sozinho (`formato <id> daily` mexe no histórico do Raio-X).
 
 ### 1c. Projeto (cliente e carreira, só se estiver vazio)
 - O sinapse-app mostra os compromissos do Pedro na tela **Frentes** lendo `ata.json` +
@@ -93,6 +96,35 @@ Invoke-Expression "$A mostrar ultima"
   - O Raio-X roda sozinho depois da confirmação.
 - **Tipo pendente** (importado sem `--tipo`): pergunte o tipo junto (nunca deduza cliente):
   `tipo <id> <cliente|parresia|carreira|pessoal>`. Até lá não há entregável nem publicação.
+
+### 1e. Daily da Parresia (`formato daily` no `mostrar`) — roteiro próprio, curto
+A daily é reunião diária interna, >1 h, 7+ pessoas, e o Pedro fala pouco. Ela fica **fora de toda
+medição** (sem Raio-X, sem histórico, sem nota no vault, sem avaliação interna: está no código). A ata
+é `atas/daily@1`: **Com você**, as **frentes rastreadas** (`frentes_rastreadas` no config, hoje Frota
+WP SUP-953…959), **por pessoa** (fez · vai fazer · travado, com card) e decisões/encaminhamentos reais.
+Nesta ordem, e **só isto** (pule os passos 3, 4, 4b, 4c, 4d e a tabela do passo 5):
+1. **Quem falou, pela rodada.** O `mostrar` traz "Quem falou, pela rodada (pista)": rótulo → nome com
+   a evidência `[mm:ss] "Rogério, e você?" → Participante 3 começa a falar`. Mostre a lista (rótulo,
+   nome proposto, 1 evidência, e a fala de abertura do rótulo para ele reconhecer a voz) e pergunte
+   **de uma vez só**. Com o sim: `falantes <id> "Participante 3=Rogério" ...` e `confirmar <id>`.
+   Nunca confirme sozinho; nome sem pista fica sem nome. Os números da diarização da daily são palpite
+   até calibrar (`calibrar <id> --daily`): se ele disser quantas pessoas falaram, rode e mostre.
+2. **Com você.** Os itens `C` (pedido · para você saber · decisão), com quem disse, card e `[mm:ss]`.
+   É a lista que ele lê primeiro; item `⚠ origem não localizada` é suspeito.
+3. **Frentes.** Para cada frente rastreada, o que foi dito (menções com `[mm:ss]`), em que item virou, e
+   as lacunas **"menção não tratada"** (card dito que não virou item) e **"card citado mas não dito
+   perto"**: leia o trecho (`mostrar <id> --transcricao`) e proponha o item com citação literal, ou
+   diga que era só menção. Proponha a **atualização da frente** (ex.: comentário no card SUP-953 pelo
+   wrapper, Quill Delta, com a citação e o timestamp) — rascunho, nunca enviado sem o sim dele.
+4. **Decisões reais** → `decisoes <id>` → `~/Projetos/qa-parresia/rotinas/decisoes.jsonl`, com o sim.
+- **Não proponha** card nem memória para assunto que não é do Pedro (a rodada dos outros fica na ata,
+  para a busca). Sinapse: nada (Parresia). Publicação: nunca sem o OK dele, na hora.
+- "Quem disse o quê sobre o SUP-953?" → `daily SUP-953` (ou `daily <termo> --pessoa Rogério
+  --frente "Frota WP" --desde 2026-10-01`): data, sessão, quem (nome confirmado ou "Participante 3
+  (Rogério?)"), card e trecho; se veio da transcrição e não de um item, diga isso.
+- Reunião antiga que era daily (ex.: 09/10): **pergunte** antes; com o sim, `formato <id> daily` (tira
+  do histórico com backup, refaz a nota do vault, guarda a avaliação como `*.antes-daily.*`) e, se
+  ele quiser a ata nova, `processar <id> --forcar transcricao,estrutura` (só com o áudio guardado).
 
 ### 2. Quem é quem (sempre antes de tudo)
 - Mostre só os rótulos que importam: com nome deduzido "a confirmar", ou sem nome e com fala
@@ -152,6 +184,7 @@ Invoke-Expression "$A mostrar ultima"
 | Tipo | Memória do Claude | Log de decisões | Sinapse | ClickUp |
 |---|---|---|---|---|
 | `parresia` | só fatos duráveis (papel, pessoas, estado de frente) | `~/Projetos/qa-parresia/rotinas/decisoes.jsonl` | **nada** | cards/comentários propostos |
+| `parresia` + `daily` | nada de assunto que não é do Pedro | só as decisões reais | **nada** | só atualização das frentes rastreadas e o "Com você" (passo 1e) |
 | `carreira` | sim | — | `08-CRESCIMENTO/` (ex.: `transicao-para-po.md`) | — |
 | `cliente` | estado do projeto | — | nota do projeto em `03-PROJETOS/` (decisão e conhecimento, sem conteúdo do cliente, sem número operacional) | só se for projeto com board |
 | `pessoal` | se durável | — | nota do tema | — |

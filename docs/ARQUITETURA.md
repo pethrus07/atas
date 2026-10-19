@@ -82,6 +82,7 @@ atas/
 │   ├── celular.py             reunião presencial: arquivo do celular → sessão de um canal (§18)
 │   ├── treino.py              modo treino: ensaio sozinho, Raio-X de monólogo (§19)
 │   ├── marcas.py              marcar momento: marcas no sessao.json, trecho, prompt (§20)
+│   ├── daily.py               daily da Parresia: ata atas/daily@1, rodada, frentes, card conferido (§21)
 │   ├── atalho.py              atalho global Ctrl+Alt+M (RegisterHotKey numa thread própria) (§20)
 │   ├── config.py              padrões + config.json + onde está o claude.exe
 │   ├── vocabulario.json       termos por tipo e por projeto (hotwords do Whisper)
@@ -94,7 +95,7 @@ atas/
 │   ├── wrangler.toml          conta FIXADA, D1, cron, ambiente homolog
 │   ├── package.json + test/   só para os testes (Miniflare); o deploy não tem build
 ├── claude/skills/ata/         a skill /ata (junction em ~/.claude/skills/ata)
-├── tests/                     pytest: 137 testes (6 lentos: fumaça, gravação, celular e atalho reais, -m lento)
+├── tests/                     pytest: 157 testes (6 lentos: fumaça, gravação, celular e atalho reais, -m lento)
 ├── atas-salvas/               FORA DO GIT — uma pasta por reunião (§8)
 ├── fala-analise/              FORA DO GIT — histórico e painel do Raio-X
 └── docs/                      este arquivo + BRIEFING-V2.md
@@ -114,8 +115,9 @@ checagem no meio) e o Pedro achou "um pouquinho too much" na primeira reunião r
    que falhou numa etapa essencial e oferece "Terminar agora" / "Agora não".
 3. **Nova reunião (R6).** Título, **tipo (obrigatório, sem valor padrão — herdar o da reunião
    anterior fazia Parresia virar cliente)** e quem fala do outro lado. Projeto, Claude e ao
-   vivo ficam em "Mais opções", recolhido, com resumo de uma linha. Só em **cliente** aparece
-   uma linha discreta **Formato** (não sei · descoberta · demo · alinhamento), opcional (§18).
+   vivo ficam em "Mais opções", recolhido, com resumo de uma linha. Em **cliente** e em
+   **Parresia** aparece uma linha discreta **Formato**, opcional: cliente = não sei · descoberta ·
+   demo · alinhamento (§18); Parresia = reunião · daily (§21).
 4. **Gravar já grava.** Numa thread, `record.escolher_dispositivos()` escolhe o microfone —
    **fone (USB/Bluetooth) antes do interno**, cada um tentado pelo `soundcard` e, se não abrir,
    pela via PortAudio — e o loopback da saída padrão. Em seguida `Sessao.criar()` faz a pasta
@@ -142,7 +144,7 @@ checagem no meio) e o Pedro achou "um pouquinho too much" na primeira reunião r
 | `estrutura` | `claude -p` → `ata.montar()` (auditoria) → `ata.json` | ata já estruturada; `estruturar: false` | contagens, custo, ou o motivo |
 | `render` / `pdf` | `ata.md`, `ata.html`, `ata.pdf`; em cliente estruturada, `entregavel.*` | — | arquivos |
 | `publicacao` | **não publica sozinha**: fica `pendente` até o Pedro mandar; atualiza a página se ela já está no ar; tipo interno com página no ar → apaga | tipo interno; sem entregável | URL, pendente, ou o erro |
-| `raio_x` | métricas + painel local + nota do Sinapse | reunião legada | se a nota foi escrita |
+| `raio_x` | métricas + painel local + nota do Sinapse | reunião legada; **daily** ("daily: fora da medição", §21) | se a nota foi escrita |
 | `audio` | PCM → Opus, confere a duração, apaga o PCM; aplica a retenção só às reuniões com **ata garantida** (estruturada, com falas, sem etapa essencial falhada), contando de `processado_em` | sem PCM | MB, dias |
 
 **Idempotente e retomável:** rodar `processar()` de novo só faz o que falta. **Uma execução
@@ -206,6 +208,7 @@ embedding (CAM++). O agrupamento é o botão sensível.
 | 1 | não diariza: todo o loopback é aquela pessoa, **com nome confirmado** |
 | 2 ou mais | `num_clusters` = esse número (o limiar nem é consultado) |
 | nenhum | agrupa pelo limiar (`diar_threshold`, padrão **0,7**) e aplica o **teto**: só conta como pessoa o grupo com ≥ 5% da fala **e** ≥ 20 s; se sobrar menos grupos do que o agrupamento abriu, roda de novo cravando esse número (máximo `diar_max_falantes`, 6) |
+| **daily** (§21) | nunca o atalho de 1 remoto; 0 ou 1 informado = limiar + teto com `daily_diar` (≥ 1,5% e ≥ 15 s, até 12 vozes — **palpite**); 2 ou mais = cravado |
 
 **Por quê.** Nas 27 reuniões de jul–set/2026, **todas as 20 gravadas depois de ligar a
 diarização saíram fatiadas** (de 5 rótulos numa reunião de 5 min a 79 em 08/09), porque o
@@ -311,8 +314,13 @@ obrigatória para gravar.**
 | `ao_vivo`, `ao_vivo_janela_s` | `false`, `30` | §12 |
 | `marcar_atalho` | `ctrl+alt+m` | atalho global do "marcar momento" (§20); modificadores ctrl/alt/shift/win + letra, dígito ou F1–F24 |
 | `marcar_som` | `false` | bipe discreto do Windows a cada marca (§20) |
+| `daily_equipe` | 11 nomes (09/10 + memórias) | universo de nomes da rodada e vocabulário do Whisper na daily; o Pedro completa (§21) |
+| `daily_diar` | `{"max_falantes": 12, "min_fatia": 0.015, "min_segundos": 15}` | teto da diarização da daily (**palpite** até `calibrar --daily`, §21) |
+| `daily_blocos_acima_min` | `100` | acima disso a daily é estruturada em blocos de 40 min |
+| `frentes_rastreadas` | Frota WP (SUP-953…959 + palavras) | frentes que o Pedro acompanha: lista obrigatória do prompt e lacuna "menção não tratada" (§21) |
 
 Variáveis de ambiente: `ATAS_SALVAS` troca a pasta das reuniões (ensaio do CLI numa **cópia**, §20);
+`ATAS_FALA` troca o `fala-analise/` (histórico e painel do Raio-X; ensaio de `formato daily`, §21);
 `SINAPSE_VAULT` troca o vault (§17).
 
 ---
@@ -371,8 +379,11 @@ e reunião antiga com tipo inferido), `despublicar <id>`, `publicadas`.
 **Corrigir o tipo/projeto.** `tipo <id> cliente --projeto instituto-automacao` (marca a
 classificação como confirmada; mudar para interno tira a página do ar).
 
-**Corrigir o formato (cliente).** `formato <id> <descoberta|demo|alinhamento|nenhum>`; refaz o
-Raio-X se ele já tinha rodado.
+**Corrigir o formato.** `formato <id> <descoberta|demo|alinhamento|nenhum>` (cliente) refaz o Raio-X
+se ele já tinha rodado. `formato <id> daily` (Parresia) tira a reunião de toda a medição (§21).
+
+**Daily.** `daily <termo> [--pessoa X] [--frente "Frota WP"] [--desde AAAA-MM-DD]` busca só nas dailies;
+`calibrar <id> --daily` roda o teto da daily em vários limiares no áudio guardado (§21).
 
 **Reunião presencial gravada no celular.** `importar <arquivo> --titulo T [--tipo] [--participantes
 "A,B"] [--formato] [--data "AAAA-MM-DD HH:MM"]`, ou `vigiar <pasta> [--continuo]`. Depois, no /ata,
@@ -613,12 +624,15 @@ confirmação **1,56/min** (só 2 linhas v3 contam), fatia **49%**, **200 ppm**,
 
 ### Formato
 
-A tela de partida mostra, **só quando o tipo é cliente**, uma linha "Formato" com um combobox
-(não sei · descoberta · demo · alinhamento; padrão "não sei"). Não é tela nova nem campo
-obrigatório: trocar o tipo para outro esconde a linha e zera a escolha. Vai para `sessao.json`
-(`formato`, `null` = não sei), que o Raio-X já lia (§17). `atas.py formato <id> <f|nenhum>`
-corrige depois e refaz o Raio-X se ele já tinha rodado; o `/ata` propõe um formato quando a
-reunião é de cliente e o campo está vazio. `FORMATOS` vive em `sessao.py`.
+A tela de partida mostra, **quando o tipo tem formato**, uma linha "Formato" com um combobox:
+cliente = não sei · descoberta · demo · alinhamento (padrão "não sei"); desde 19/10, Parresia =
+reunião · daily (padrão "reunião", §21). Não é tela nova nem campo obrigatório: trocar o tipo troca
+as opções ou esconde a linha, e zera a escolha. Vai para `sessao.json` (`formato`, `null` = não sei /
+reunião), que o Raio-X lê só em cliente (§17). `atas.py formato <id> <f|nenhum>` corrige depois e
+refaz o Raio-X se ele já tinha rodado; o `/ata` propõe um formato quando a reunião é de cliente e o
+campo está vazio. `FORMATOS` vive em `sessao.py`, **por tipo** (`{"cliente": (...), "parresia":
+("daily",)}`); `Sessao.criar` e `formato` recusam formato de outro tipo, e `atas.py tipo` limpa o
+que não combinar com o tipo novo.
 
 ### Reunião presencial gravada no celular
 
@@ -875,3 +889,145 @@ liberado) e conferida contra a regra de UI.
 - Um tipo só de marca e sem rótulo; marca não aparece no `ao-vivo.md`.
 - O atalho é global só durante a gravação; o Ctrl+Alt+M fica indisponível para outros programas nesse
   tempo (Word: comentário). Falta a primeira reunião real marcada ao vivo.
+
+---
+
+## 21 · Daily da Parresia (19/10/2026)
+
+Pedido do Pedro: dailies da Parresia, internas, **mais de 1 h**, normalmente **7 ou mais pessoas** (o
+número varia), uma rodada em que o Otávio chama cada um pelo nome. Ele fala pouco (daily de 09/10:
+fatia 8,9%, 582 palavras). Quer gravar para achar depois **quem disse o quê sobre qual card** (em 19/10
+uma informação do Rogério sobre o SUP-953 só existia numa daily não gravada). Tem **duas dailies
+seguidas** e **não quer digitar participante nome a nome**. Código em `local/daily.py` (ata, rodada,
+frentes, card, busca), `estruturar.py` (esquema e prompt), `render.py` (`*_daily`), `sessao.py`
+(`FORMATOS`, `fora_da_medicao`); testes em `tests/test_daily.py`.
+
+### Modelagem: formato por tipo
+
+`sessao.FORMATOS = {"cliente": ("descoberta", "demo", "alinhamento"), "parresia": ("daily",)}`. A daily
+continua **tipo `parresia`**: o roteamento não muda (não sai da máquina, não vai ao Sinapse, decisões
+para `qa-parresia/rotinas/decisoes.jsonl` pelo /ata). Na janela, a linha "Formato" que só existia em
+cliente aparece também em Parresia, com **reunião** (= `null`, padrão) e **daily**; sem tela nova.
+`Sessao.criar`, `atas.py formato`, `importar --formato` e `app.formato_da_tela` recusam (ou descartam)
+formato de outro tipo; `atas.py tipo` limpa o formato que não combina com o tipo novo. O Raio-X só lê
+formato de cliente (`analise_fala.FORMATOS = FORMATOS["cliente"]`).
+
+### Fora de toda medição (garantido no código)
+
+Predicado **único**: `sessao.fora_da_medicao(x)` (`x` = Sessao, manifesto, linha do histórico ou ata;
+hoje: formato daily). Ninguém compara a string "daily" por conta própria.
+
+| Onde | O que faz na daily |
+|---|---|
+| `pipeline.processar` | `raio_x` e `avaliacao` = **pulada**, "daily: fora da medição" |
+| `analise_fala.processar` | levanta `ForaDaMedicao` antes de calcular |
+| `analise_fala._upsert_historico` | levanta para linha daily (nunca grava no `historico.jsonl`) |
+| `analise_fala._atualizar_vault` | levanta se receber linha daily; quem chama filtra com `linhas_medidas` (a nota é sempre regenerada sem daily) |
+| `ler_historico`, `_escrever_painel`, `pagina_da_reuniao` | nunca contam/mostram linha daily (mediana das últimas 5, painel, página) |
+| `avaliar.deve_avaliar` / `avaliar.avaliar` | `False` / levanta (`TIPOS_AVALIADOS` continua com parresia) |
+| `atas.raio_x`, `fala <id>`, `fala --recalcular` | pula e diz por quê; `raio_x` = pulada |
+| `app._cartao_fala` | não mostra o cartão (mesmo com linha antiga do mesmo id no histórico) |
+
+Teste: processar uma daily deixa o `historico.jsonl` e a nota do vault **byte a byte iguais** (hash),
+inclusive reprocessando com `--forcar estrutura,avaliacao`.
+
+**Reunião já medida que vira daily** (`atas.py formato <id> daily`): backup
+`fala-analise/historico.jsonl.bak-<data>` (não sobrescreve outro do mesmo dia), tira a linha, apaga a
+página e o relatório `.md` daquela reunião em `fala-analise/`, regenera painel e nota do vault sem ela,
+renomeia `avaliacao-interna.md/.html` (e as `.auto-*`) para `*.antes-daily.*` (não apaga; `mais_recente`
+deixa de achá-las), marca `raio_x` e `avaliacao` como pulada e avisa que a ata ainda é a de reunião
+normal (`processar <id> --forcar estrutura`, ou `transcricao,estrutura` enquanto houver áudio). Voltar
+de daily para reunião (`formato <id> nenhum`) só avisa: o Raio-X sai com `processar <id> --forcar
+estrutura`. Ensaio em cópia: `ATAS_SALVAS` + `ATAS_FALA` (pasta do histórico) + `SINAPSE_VAULT`.
+**A daily de 09/10 (`2026-10-09_0935_reuniao-metodo`) NÃO foi convertida: é decisão do Pedro.**
+
+### Quem falou, sem digitar nomes
+
+- **Nunca o atalho de 1 remoto** na daily (`ata.participantes_iniciais(daily=True)` e
+  `transcribe.transcrever_sessao`): em 09/10 só "mauro" foi digitado e 34 min de 7 pessoas viraram
+  Mauro, confirmado. Na daily, 0 ou 1 informado = limiar + teto; 2 ou mais = número cravado (respeitado).
+- **Teto da daily** (`daily_diar`): até **12** vozes, grupo com ≥ **1,5%** da fala e ≥ **15 s** (a reunião
+  normal exige 5% e 20 s, o que apagaria quem fala 1 min numa daily de 1 h com 8 pessoas). `diarize.py`
+  ganhou `fatia_min`/`min_seg` (argumentos 6 e 7 da linha de comando); sem eles a linha de comando e o
+  comportamento da reunião normal são os de antes (teste). **Esses números são palpite** até
+  `atas.py calibrar <id> --daily` numa daily real de 1 h com a contagem de pessoas conhecida.
+- **Equipe** (`daily_equipe`): o universo de nomes da rodada e o vocabulário do Whisper na daily (vem
+  antes dos outros termos: o limite de 40 não a corta). Lista inicial da daily de 09/10 (43:53, a lista de
+  contas do Vértice Suite) e das memórias; o Pedro completa uma vez no `config.json`.
+- **Rodada como evidência** (`daily.rodada`): um trecho com vocativo de um nome da equipe ("Rogério, e
+  você?", "fala, Rogério", "e aí, Téo", "Rogério?" — mas não "falou com o Rogério?") seguido, em até
+  **10 s**, de **outro** rótulo começando a falar propõe `rótulo → nome`, com a evidência
+  `[mm:ss] Participante 1: "…Rogério, e você?" → [mm:ss] Participante 3 começa a falar`. "Você" e o
+  `meu_nome` nunca são propostos. Vai ao Claude como pista; o resultado fica em `participantes` com
+  `confirmado: false` (regra 5) e em `ata.rodada`; a confirmação é no /ata (`falantes`, `confirmar`).
+
+### A ata `atas/daily@1`
+
+`participantes`, `contexto`, `resumo`; `pessoas [{nome, rotulo, fez[], vai_fazer[], travado[]}]` (itens
+`F`/`A`/`T` `{item, card, t, citacao}`); `com_voce [{C.., o_que, quem, card, frente, tipo: pedido|informacao|decisao,
+t, citacao}]`; `decisoes`/`encaminhamentos` (D/E, como na ata@1, só os reais); `momentos` (Ctrl+Alt+M,
+mesmo mecanismo do §20, prioritários no prompt); `frentes` e `rodada` (calculados); `equipe` e
+`frentes_rastreadas` (o que a ata usou do config). Prompt `VERSAO_PROMPT_DAILY = "daily-1"`, esquema
+fechado `estruturar.ESQUEMA_DAILY`; acima de `daily_blocos_acima_min` (100) em blocos de 40 min.
+
+| Conferência (no código) | Se falhar |
+|---|---|
+| citação literal numa fala (`ata.auditar_item`, a mesma das atas normais, generalizada) | `verificado: false` + lacuna |
+| **card**: `SUP-NNN` (ou só o número) dito na fala citada ou a até **±60 s** dela | `card: null`, `card_removido`, lacuna |
+| **frentes** (`frentes_rastreadas`): falas com card ou palavra da frente → lista obrigatória no prompt | card de frente dito que não virou item verificado (mesmo card, ou mesma frente a ±60 s) = lacuna **"menção não tratada"**; menção só por palavra é pista, não lacuna |
+| prazo, dono/quem | como na ata@1 (a equipe conta como nome conhecido) |
+
+**Render** (só interno: `render.html(cliente=True)` levanta): **Com você** e as **frentes** no topo,
+depois **por pessoa** (nome confirmado, ou "Participante 3 (Rogério?)"), decisões/encaminhamentos,
+momentos; resumo, rodada e lacunas em "Mais"; transcrição recolhida. Nunca entregável nem publicação.
+
+### Duas dailies seguidas e busca
+
+Tela final de uma daily: link discreto **Gravar a próxima daily** (sem borda, acima de "Ver a ata"), que
+grava já com tipo Parresia, formato daily e o título com "(2)" — ou o próximo número das dailies do dia
+(`sessao.titulo_da_proxima_daily`) —, sem a tela de digitar. Fotos conferidas em 19/10 (partida com
+Parresia/Formato e a tela final), contra a regra de UI.
+
+`atas.py daily <termo> [--pessoa X] [--frente "Frota WP"] [--desde AAAA-MM-DD]`: só nas dailies, cada
+menção com data, sessão, quem (nome confirmado ou "Rótulo (nome?)"), card, onde (F1 fez, C2 com você,
+D1…) e o texto; sem item na ata, cai na transcrição (e diz "transcrição"). Daily antiga com ata de
+reunião normal: só decisões/encaminhamentos e a transcrição.
+
+### Medido em 19/10/2026 numa cópia da daily de 09/10 (não calibrado)
+
+Cópia de `2026-10-09_0935_reuniao-metodo` (46 min, 1 nome digitado: "mauro") com `ATAS_SALVAS`,
+`ATAS_FALA` e `SINAPSE_VAULT` em pasta temporária (vault vazio); a original, o `fala-analise/` e a nota
+do vault conferidos por **hash antes e depois: iguais**. Nada publicado.
+
+1. `formato <id> daily` na cópia: linha tirada do histórico (backup `.bak-2026-10-19`), página e relatório
+   `.md` dela apagados, avaliação guardada como `avaliacao-interna.antes-daily.md/.html`, `raio_x` e
+   `avaliacao` = pulada. Noutra cópia, com a nota real do vault: a nota regenerada do histórico atual é
+   **byte a byte igual** à do vault; sem a 09/10, muda só "Reuniões monitoradas" (33 → 32) e a linha dela.
+2. `processar --forcar transcricao,estrutura`: Whisper + diarização com o teto da daily **1.334 s** (a
+   original, sem diarização, levou 320 s; só a diarização, na CPU, leva ~835 s para 46 min — conta ~18 min
+   numa daily de 1 h); **32 grupos brutos → 8 vozes** além do Pedro (fatia na transcrição, contando o
+   Pedro: 41%, 26%, 15%, 7%, 2,1%, 0,9%, 0,5%, 0,3%). O mesmo áudio com o teto **normal** (`calibrar`,
+   limiar 0,7): **6 vozes** (45%, 34%, 15%, 5%, 1%, 0%). Quantas pessoas falaram de fato não se sabe: é
+   isso que a calibragem numa daily real vai dizer.
+3. Claude (daily-1): **120 s, US$ 0,50**, 38.818 caracteres. 4 pessoas, 28 itens, 9 "com você", 4 decisões,
+   9 encaminhamentos: **50 itens auditados, 0 sem origem, 0 card removido**. Nomes deduzidos pelo texto
+   (a confirmar): Otávio, Mauro, Davi, Augusto.
+4. Rodada: a 09/10 **não é uma daily de rodada** (é a apresentação do método); o código achou **2
+   pistas** — `Participante 1 → Augusto?` ("Ó, aí, Augusto, me fala…" → outro rótulo em 8 s) e
+   `Participante 5 → Téo?` ("Aí o Téo, como é que tá a situação aí?") —, e a primeira **discorda** do nome
+   que a ata deduziu (Otávio): virou lacuna "a rodada aponta…". Não dá para medir o acerto aqui.
+5. Frentes: **0 menções a SUP-95x** (a frota não foi assunto em 09/10; "WordPress" ali é o plugin de
+   eventos, fora das palavras da frente). `atas.py daily Vértice` achou 4 menções com quem/card/trecho.
+
+### Limites conhecidos
+
+- **Não calibrado.** Teto (1,5% / 15 s / 12), janela da rodada (10 s) e janela do card (60 s) são
+  heurísticas; calibrar na primeira daily de 1 h gravada de verdade, sabendo quantas pessoas falaram.
+- A diarização continua o elo fraco (§6): uma pessoa pode virar dois rótulos e dois rótulos uma pessoa;
+  a rodada propõe por rótulo, e um rótulo misturado recebe votos para nomes diferentes (`outros`).
+- Card dito por extenso ("novecentos e cinquenta e três") não é reconhecido; número solto ("o 953") é,
+  e pode casar com um número que não é card.
+- Vocativo sem nome da equipe (apelido, "e você aí?") não vira pista; complete `daily_equipe` com os
+  apelidos usados (ex.: "Lena").
+- Um nome digitado na daily não é a contagem: com 1 informado o teto decide; com 2+ o número é cravado
+  mesmo que esteja incompleto (é o que o Pedro digitou).
