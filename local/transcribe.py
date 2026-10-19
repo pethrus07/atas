@@ -19,6 +19,10 @@ v2 (30/09/2026):
     como `hotwords`, que o faster-whisper repete em toda janela de 30 s (o
     `initial_prompt` só vale no começo do áudio).
   - **Número de participantes informado** crava a diarização; 1 remoto dispensa-a.
+
+Daily da Parresia (19/10/2026, ARQUITETURA §21): NUNCA o atalho "1 remoto = todo o loopback é ele"
+(foi o que pôs 34 min de 7 pessoas no Mauro em 09/10); sem participantes (ou com 1), limiar + teto
+com os parâmetros próprios `daily_diar`; a equipe (`daily_equipe`) entra no vocabulário.
 """
 import json
 import os
@@ -98,9 +102,10 @@ def carregar_modelo(tamanho="auto", dispositivo="auto", log=print):
     raise RuntimeError("nenhum dispositivo de transcrição disponível")
 
 
-def vocabulario(tipo=None, projeto=None, participantes=None, meu_nome=None, caminho=_VOCAB):
-    """Termos que o Whisper deve reconhecer nesta reunião (nomes, produtos, siglas)."""
-    termos = []
+def vocabulario(tipo=None, projeto=None, participantes=None, meu_nome=None, caminho=_VOCAB, equipe=None):
+    """Termos que o Whisper deve reconhecer nesta reunião (nomes, produtos, siglas). `equipe` (a
+    daily) vem primeiro: são os nomes da rodada, e o limite de 40 termos não pode cortá-los."""
+    termos = list(equipe or [])
     try:
         v = json.loads(pathlib.Path(caminho).read_text(encoding="utf-8"))
     except Exception:
@@ -166,17 +171,21 @@ def _passada(modelo, audio, falante, hotwords=None, idioma="pt"):
     return out
 
 
-def _diarizar(arquivo, threshold, num_speakers, max_falantes, diar_py=None, referencia=None):
+def _diarizar(arquivo, threshold, num_speakers, max_falantes, diar_py=None, referencia=None,
+              fatia_min=None, min_seg=None):
     """Roda diarize.py no venv separado. Devolve o dict de saída, ou levanta com o motivo.
-    `referencia`: wav com a voz do Pedro → a saída traz `similaridade` por grupo (áudio do celular)."""
+    `referencia`: wav com a voz do Pedro → a saída traz `similaridade` por grupo (áudio do celular).
+    `fatia_min`/`min_seg`: o teto da daily; None = o da reunião normal (a linha de comando não muda)."""
     py = pathlib.Path(diar_py) if diar_py else _DIAR_PY
     if not py.exists():
         raise RuntimeError(f"venv da diarização não encontrado: {py}")
-    r = subprocess.run(
-        [str(py), str(_DIAR_SCRIPT), str(arquivo), str(threshold), str(num_speakers),
-         str(max_falantes)] + ([str(referencia)] if referencia else []),
-        capture_output=True, text=True, timeout=3600,
-    )
+    cmd = [str(py), str(_DIAR_SCRIPT), str(arquivo), str(threshold), str(num_speakers),
+           str(max_falantes)] + ([str(referencia)] if referencia else [])
+    if fatia_min is not None or min_seg is not None:
+        if not referencia:
+            cmd.append("")                            # posição da referência vazia
+        cmd += [str(fatia_min if fatia_min is not None else ""), str(min_seg if min_seg is not None else "")]
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
     for ln in reversed((r.stdout or "").splitlines()):
         ln = ln.strip()
         if ln.startswith("{"):
@@ -186,6 +195,33 @@ def _diarizar(arquivo, threshold, num_speakers, max_falantes, diar_py=None, refe
             return {"turnos": t, "falantes": len({x["speaker"] for x in t}), "modo": "?"}
     raise RuntimeError(f"diarização sem saída (código {r.returncode}): "
                        f"{(r.stderr or '').strip()[-400:]}")
+
+
+def params_diar(sessao, cfg):
+    """(threshold, max_falantes, fatia_min, min_seg) da diarização desta sessão. Na daily vêm de
+    `daily_diar` (PALPITE até calibrar numa daily real); fora dela, fatia_min/min_seg = None (o teto
+    de sempre, dentro do diarize.py)."""
+    import config as _config
+    from sessao import fora_da_medicao
+    thr = cfg.get("diar_threshold", 0.5)
+    if not fora_da_medicao(sessao):
+        return thr, cfg.get("diar_max_falantes", 6), None, None
+    d = {**_config.PADROES["daily_diar"], **(cfg.get("daily_diar") or {})}
+    return (d.get("threshold", thr), d["max_falantes"], d["min_fatia"], d["min_segundos"])
+
+
+def _teto(fatia_min, min_seg):
+    """Os argumentos do teto só quando há teto próprio (daily): a chamada da reunião normal fica igual."""
+    return {} if fatia_min is None and min_seg is None else {"fatia_min": fatia_min, "min_seg": min_seg}
+
+
+def equipe_daily(sessao, cfg):
+    """Os nomes da equipe (universo da rodada e vocabulário), só na daily."""
+    import config as _config
+    from sessao import fora_da_medicao
+    if not fora_da_medicao(sessao):
+        return []
+    return list(cfg.get("daily_equipe") or _config.PADROES["daily_equipe"])
 
 
 def rotular_participantes(segs_part, turnos, prefixo="Participante", ordem_out=None):
@@ -241,8 +277,8 @@ def transcrever_celular(sessao, cfg, log=print):
     modelo, info = carregar_modelo(cfg.get("model", "auto"), cfg.get("dispositivo", "auto"), log)
     log(f"  Modelo {info['modelo']} em {info['dispositivo'].upper()}")
     remotos = sessao.participantes_remotos()
-    hot = vocabulario(sessao.tipo, sessao.m.get("projeto"), remotos, cfg.get("meu_nome")) \
-        if cfg.get("vocabulario", True) else []
+    hot = vocabulario(sessao.tipo, sessao.m.get("projeto"), remotos, cfg.get("meu_nome"),
+                      equipe=equipe_daily(sessao, cfg)) if cfg.get("vocabulario", True) else []
     info["vocabulario"] = len(hot)
     fonte = _audio.fonte_audio(sessao, "celular")
     x = _audio.ler_audio(fonte)
@@ -262,8 +298,8 @@ def transcrever_celular(sessao, cfg, log=print):
         tmp = pathlib.Path(tempfile.mkdtemp()) / "celular.wav"
         try:
             _audio.escrever_wav(tmp, x)
-            res = _diarizar(tmp, cfg.get("diar_threshold", 0.5), n, cfg.get("diar_max_falantes", 6),
-                            cfg.get("diar_python"), referencia=ref)
+            thr, mx, fmin, smin = params_diar(sessao, cfg)
+            res = _diarizar(tmp, thr, n, mx, cfg.get("diar_python"), referencia=ref, **_teto(fmin, smin))
             rot = rotular_participantes(segs, res.get("turnos"), prefixo="Falante", ordem_out=ordem)
             sims = {f"Falante {ordem[int(k)]}": v for k, v in (res.get("similaridade") or {}).items()
                     if int(k) in ordem}
@@ -330,7 +366,7 @@ def transcrever_sessao(sessao, cfg, log=print):
     hot = []
     if cfg.get("vocabulario", True):
         hot = vocabulario(sessao.tipo, sessao.m.get("projeto"), sessao.participantes_remotos(),
-                          cfg.get("meu_nome"))
+                          cfg.get("meu_nome"), equipe=equipe_daily(sessao, cfg))
     info["vocabulario"] = len(hot)
 
     fonte_mic = _audio.fonte_audio(sessao, "mic")
@@ -349,9 +385,13 @@ def transcrever_sessao(sessao, cfg, log=print):
 
     # ── quem é quem do lado de lá ──
     remotos = sessao.participantes_remotos()
+    from sessao import fora_da_medicao
+    daily = fora_da_medicao(sessao)
     diar = {"status": "pulada"}
     if segs_part and cfg.get("diarizar", True):
-        if len(remotos) == 1:
+        # o atalho de 1 remoto NUNCA vale na daily: 1 nome digitado numa reunião de 7 pessoas é um
+        # nome da lista, não a contagem (09/10/2026: 34 min de 7 pessoas atribuídos ao Mauro)
+        if len(remotos) == 1 and not daily:
             diar = {"status": "pulada", "motivo": "1 participante remoto informado",
                     "falantes": 1}
         else:
@@ -363,11 +403,14 @@ def transcrever_sessao(sessao, cfg, log=print):
                     tmp = pathlib.Path(tempfile.mkdtemp()) / "loop.wav"
                     _audio.escrever_wav(tmp, audio_loop)
                     arq = tmp
-                res = _diarizar(arq, cfg.get("diar_threshold", 0.5), n,
-                                cfg.get("diar_max_falantes", 6), cfg.get("diar_python"))
+                thr, mx, fmin, smin = params_diar(sessao, cfg)
+                res = _diarizar(arq, thr, n, mx, cfg.get("diar_python"), **_teto(fmin, smin))
                 rot = rotular_participantes(segs_part, res.get("turnos"))
                 diar = {"status": "ok", "modo": res.get("modo"), "falantes": rot,
                         "grupos_brutos": res.get("brutos")}
+                if daily:
+                    diar["parametros"] = {"threshold": thr, "max_falantes": mx, "min_fatia": fmin,
+                                          "min_segundos": smin, "calibrado": False}
                 log(f"    {rot} participante(s) remoto(s) ({res.get('modo')}; "
                     f"agrupamento bruto: {res.get('brutos')})")
             except Exception as e:

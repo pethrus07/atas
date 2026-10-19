@@ -41,6 +41,26 @@ PADROES = {
     # ao vivo (R9)
     "ao_vivo": False,
     "ao_vivo_janela_s": 30,
+    # daily da Parresia (19/10/2026, docs/ARQUITETURA.md §21): fora de toda medição; quem falou sai
+    # da diarização com parâmetros próprios + a rodada ("Rogério, e você?"), sem digitar nomes.
+    # A equipe é o universo de nomes da rodada e entra como vocabulário do Whisper. Lista inicial
+    # tirada da daily de 09/10 (43:53, a lista de contas do Vértice Suite) e das memórias: o Pedro
+    # completa UMA vez no config.json.
+    "daily_equipe": ["Otávio", "Mauro", "Rogério", "Caio", "Téo", "Augusto", "Davi",
+                     "Helena", "Vítor", "Raul", "Breno"],
+    # PALPITE até calibrar com `atas.py calibrar <id> --daily` numa daily real de 1 h: o teto da
+    # reunião normal (≥5% da fala e ≥20 s) apagaria quem fala 1 min numa daily de 1 h com 8 pessoas.
+    "daily_diar": {"max_falantes": 12, "min_fatia": 0.015, "min_segundos": 15},
+    # acima disso a daily é estruturada em blocos (a reunião normal usa estruturar_blocos_acima_min)
+    "daily_blocos_acima_min": 100,
+    # frentes que o Pedro acompanha: a fala que cita um card ou uma palavra delas vai ao Claude como
+    # lista obrigatória, e card citado que não virou item vira lacuna "menção não tratada"
+    "frentes_rastreadas": [
+        {"nome": "Frota WP",
+         "palavras": ["frota", "MainWP", "wp-log1n", "file manager", "contas plantadas",
+                      "segurança dos sites", "malware"],
+         "cards": ["SUP-953", "SUP-954", "SUP-955", "SUP-956", "SUP-957", "SUP-958", "SUP-959"]},
+    ],
 }
 
 

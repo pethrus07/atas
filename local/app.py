@@ -37,10 +37,13 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent))
 import config as _config  # noqa: E402
 import record  # noqa: E402  (importado na thread principal: segura o COM do processo)
 import sessao as _sessao  # noqa: E402
-from sessao import FORMATOS, TIPOS, Sessao  # noqa: E402
+from sessao import TIPOS, Sessao, formatos_do_tipo, fora_da_medicao  # noqa: E402
 
 LOG = pathlib.Path(__file__).parent / "atas.log"
 FORMATO_NAO_SEI = "não sei"
+FORMATO_REUNIAO = "reunião"          # Parresia sem formato = reunião normal (medida); "daily" = fora da medição
+# o rótulo do "sem formato" de cada tipo que tem formato (19/10/2026: o formato passou a valer por tipo)
+FORMATO_PADRAO = {"cliente": FORMATO_NAO_SEI, "parresia": FORMATO_REUNIAO}
 VERMELHO = "#C0392B"
 CINZA = "#6E6E69"
 VERDE = "#3A5A50"
@@ -95,8 +98,9 @@ def _fmt_tempo(seg):
 
 
 def formato_da_tela(tipo, escolha):
-    """O que vai para o sessao.json: o formato só vale em cliente; "não sei" = None."""
-    return escolha if tipo == "cliente" and escolha in FORMATOS else None
+    """O que vai para o sessao.json: só um formato do tipo escolhido (cliente: descoberta/demo/
+    alinhamento; Parresia: daily); "não sei"/"reunião" = None. Escolha de outro tipo não vaza."""
+    return escolha if escolha in formatos_do_tipo(tipo) else None
 
 
 def _curto(nome):
@@ -256,22 +260,28 @@ class App(tk.Tk):
         self.v_tipo = tk.StringVar(value="")
         linha = ttk.Frame(f)
         linha.pack(fill="x", pady=(_p(6), 0))
-        # formato (14/10/2026): só aparece em cliente, uma linha discreta, "não sei" de padrão.
-        # Afina a faixa da fatia de fala no Raio-X (descoberta 35–50%; demo/alinhamento 45–60%).
+        # formato (14/10/2026; por tipo desde 19/10): uma linha discreta, só nos tipos que têm formato.
+        # Cliente: não sei · descoberta · demo · alinhamento (afina a fatia de fala do Raio-X).
+        # Parresia: reunião · daily (a daily fica fora de toda medição). Sem tela nova.
         self.v_formato = tk.StringVar(value=FORMATO_NAO_SEI)
         l_formato = ttk.Frame(f)
         ttk.Label(l_formato, text="Formato", style="Sub.TLabel").pack(side="left")
-        ttk.Combobox(l_formato, textvariable=self.v_formato, state="readonly", width=12,
-                     values=[FORMATO_NAO_SEI, *FORMATOS], font=(self.fonte, 9)
-                     ).pack(side="left", padx=(_p(8), 0))
+        cb_formato = ttk.Combobox(l_formato, textvariable=self.v_formato, state="readonly", width=12,
+                                  values=[FORMATO_NAO_SEI], font=(self.fonte, 9))
+        cb_formato.pack(side="left", padx=(_p(8), 0))
+        self.cb_formato = cb_formato
 
         def tipo_escolhido():
             self.l_falta.configure(text="")
-            if self.v_tipo.get() == "cliente":
+            tipo = self.v_tipo.get()
+            if formatos_do_tipo(tipo):
+                cb_formato.configure(values=[FORMATO_PADRAO[tipo], *formatos_do_tipo(tipo)])
+                self.v_formato.set(FORMATO_PADRAO[tipo])
                 l_formato.pack(anchor="w", after=linha, pady=(_p(8), 0))
             else:
                 l_formato.pack_forget()
                 self.v_formato.set(FORMATO_NAO_SEI)
+        self.tipo_escolhido = tipo_escolhido
         for k, rot in TIPOS.items():
             ttk.Radiobutton(linha, text=rot.split(" (")[0].split(" /")[0], value=k,
                             variable=self.v_tipo, command=tipo_escolhido
@@ -339,7 +349,21 @@ class App(tk.Tk):
         self.cfg["estruturar"] = self.v_claude.get()
         self.cfg["ao_vivo"] = self.v_ao_vivo.get()
         self.b_gravar.configure(text="Preparando o áudio…", state="disabled")
+        self._preparar_gravacao()
 
+    def proxima_daily(self, s):
+        """'Gravar a próxima daily' (o Pedro tem duas seguidas, 19/10/2026): grava já, sem a tela de
+        digitar — tipo Parresia, formato daily, o título desta com "(2)" (ou o próximo número do dia)."""
+        self.ctx = {"titulo": _sessao.titulo_da_proxima_daily(s), "tipo": "parresia",
+                    "projeto": s.m.get("projeto") or "", "formato": "daily",
+                    "participantes": list(s.m.get("participantes") or [])}
+        if getattr(self, "l_proxima", None) is not None:
+            self.l_proxima.configure(text="Preparando o áudio…", cursor="")
+            self.l_proxima.unbind("<Button-1>")
+        self._preparar_gravacao()
+
+    def _preparar_gravacao(self):
+        """Escolhe os dispositivos numa thread e começa a gravar com `self.ctx`."""
         def preparar():
             try:
                 disp = record.escolher_dispositivos(self.cfg.get("microfone"))
@@ -532,7 +556,11 @@ class App(tk.Tk):
 
     def _cartao_fala(self, f, s):
         """Raio-X da Fala na tela final (v2.1). A v2 calculava e não mostrava nada; o Pedro achou
-        que a função tinha sumido. Só o que não bateu a meta fica à vista; o resto, no painel."""
+        que a função tinha sumido. Só o que não bateu a meta fica à vista; o resto, no painel.
+        A daily (19/10/2026) fica fora da medição: nada de cartão, mesmo que o histórico tenha uma
+        linha antiga com o id dela."""
+        if fora_da_medicao(s):
+            return
         import json
         import analise_fala
         hist = analise_fala.FALA_DIR / "historico.jsonl"
@@ -647,6 +675,11 @@ class App(tk.Tk):
         linha.pack(fill="x", pady=(_p(10), 0))
         ttk.Button(linha, text="Abrir a pasta", style="Link.TButton", command=pasta).pack(side="left")
         ttk.Button(linha, text="Nova reunião", style="Link.TButton", command=self.inicio).pack(side="right")
+        self.l_proxima = None
+        if fora_da_medicao(s):
+            # duas dailies seguidas: um link discreto, sem borda, acima do "Ver a ata"
+            self.l_proxima = self._link(rod, "Gravar a próxima daily", lambda: self.proxima_daily(s))
+            self.l_proxima.pack(anchor="w", before=rod.winfo_children()[0], pady=(0, _p(14)))
 
     # ── modo treino (14/10/2026): Treino → Treinando → Seu treino ──────────
     # Ensaio sozinho, só o microfone; o resultado fica fora do Raio-X das reuniões (treino.py).

@@ -33,6 +33,10 @@ O que não foi dito aparece como LACUNA, não como dado. Um campo que o Pedro
 preencher depois da reunião entra em `manual: ["prazo", ...]` e não é auditado — é
 dado dele, não da transcrição.
 
+A daily da Parresia (formato "daily", 19/10/2026) tem esquema próprio, `atas/daily@1` (ver
+daily.py): pessoas (fez/vai fazer/travado), "com você", frentes rastreadas e a rodada. `auditar`,
+`lacunas`, `contagem` e `base` atendem os dois esquemas; a regra é a mesma ("nada inventado").
+
 O formato das decisões é o mesmo do log `qa-parresia/rotinas/decisoes.jsonl`
 ({data, decisao, contexto, quem, destrava, revisar_em}) mais a `origem` — para o
 log de decisões e o painel de PO consumirem direto (ver `decisao_para_log`).
@@ -41,6 +45,12 @@ import re
 import unicodedata
 
 SCHEMA_ATA = "atas/ata@1"
+SCHEMA_DAILY = "atas/daily@1"
+
+
+def e_daily(ata):
+    """A ata é do esquema da daily? (o ata.json carrega o schema; a sessão carrega o formato)."""
+    return (ata or {}).get("schema") == SCHEMA_DAILY
 
 # Esquema entregue ao Claude (--json-schema). Só o que ele produz; ids, verificação
 # e lacunas são responsabilidade do código.
@@ -148,9 +158,11 @@ def rotulos(segs):
 
 
 # ── participantes ────────────────────────────────────────────────────────────
-def participantes_iniciais(segs, meu_nome, remotos, voce_a_confirmar=None):
+def participantes_iniciais(segs, meu_nome, remotos, voce_a_confirmar=None, daily=False):
     """O que se sabe sem IA: 'Você' é o Pedro; se só um remoto foi informado e o
-    loopback não foi separado, 'Participante' é ele.
+    loopback não foi separado, 'Participante' é ele — MENOS na daily (`daily=True`, 19/10/2026):
+    numa reunião de 7 pessoas, 1 nome digitado não é a contagem, e o atalho pôs 34 min de 7 vozes
+    no Mauro, confirmado, em 09/10. Lá o nome vem da rodada e do /ata.
 
     `voce_a_confirmar` (áudio do celular, 14/10/2026): a evidência de por que um rótulo virou
     "Você". Aí nada é certo — nem "Você", nem o remoto único que depende dele — até o Pedro
@@ -167,7 +179,7 @@ def participantes_iniciais(segs, meu_nome, remotos, voce_a_confirmar=None):
             out.append({"rotulo": r, "nome": meu_nome, "origem": "eu" if certo else "voz",
                         "confirmado": certo, "evidencia": None if certo else voce_a_confirmar,
                         "fatia": round(tempo.get(r, 0) / total, 3)})
-        elif r == "Participante" and len(remotos) == 1:
+        elif r == "Participante" and len(remotos) == 1 and not daily:
             out.append({"rotulo": r, "nome": remotos[0], "origem": "informado",
                         "confirmado": certo, "evidencia": "único participante remoto informado"
                         + ("" if certo else " (depende de quem é \"Você\")"),
@@ -293,45 +305,61 @@ def _data_coerente(iso, dito, data_reuniao):
     return True
 
 
-def auditar(ata, segs):
-    fl = falas(segs)
+def contexto_auditoria(ata, fl):
+    """(blob da transcrição, nomes/rótulos conhecidos) — o que a conferência de dono/quem usa."""
     blob = " ".join(f["text"] for f in fl)
     conhecidos = {norm(p.get("nome")) for p in ata.get("participantes", []) if p.get("nome")}
     conhecidos |= {norm(p["rotulo"]) for p in ata.get("participantes", [])}
     conhecidos |= {norm(x) for x in ata.get("_remotos", [])}
     conhecidos.discard("")
+    return blob, conhecidos
 
+
+def auditar_item(it, fl, blob, conhecidos, data):
+    """Confere UM item contra a transcrição (a regra de toda lista, das duas atas): a citação está
+    numa fala (senão `verificado: false`), o `t` é o da fala achada, prazo/revisão só com a expressão
+    dita perto, dono/quem conhecido. Grava `problemas` e devolve o índice da fala achada (ou None)."""
+    probs = []
+    t_seg = parse_t(it.get("t"))
+    i = _achar(it.get("citacao"), fl, t_seg)
+    if i is None:
+        it["verificado"] = False
+        probs.append("citação não localizada na transcrição")
+    else:
+        it["verificado"] = True
+        t_real = fmt_t(fl[i]["start"])
+        if t_seg is None or abs(fl[i]["start"] - t_seg) > 5:
+            probs.append(f"timestamp corrigido de {it.get('t')} para {t_real}")
+            it["t"] = t_real
+    manual = set(it.get("manual") or [])     # campos definidos pelo Pedro depois
+    for campo, dito in (("prazo", "prazo_dito"), ("revisar_em", "revisar_em_dito")):
+        if campo not in it or not it.get(campo) or campo in manual:
+            continue
+        # a expressão tem de estar DITA perto da fala — a citação sozinha não basta,
+        # porque é o próprio Claude que a escreve
+        ok = (i is not None and _expressao_perto(it.get(dito), fl, i)
+              and _data_coerente(it[campo], it.get(dito), data))
+        if not ok:
+            probs.append(f"{campo} '{it[campo]}' removido: a expressão dita "
+                         f"('{it.get(dito)}') não foi localizada ou não bate com a data")
+            it[campo] = None
+    for campo in ("dono", "quem"):
+        v = it.get(campo)
+        if v and campo not in manual and norm(v) not in conhecidos and not _contem(v, blob):
+            probs.append(f"{campo} '{v}' não aparece na transcrição nem nos participantes")
+    it["problemas"] = probs
+    return i
+
+
+def auditar(ata, segs):
+    if e_daily(ata):
+        import daily
+        return daily.auditar(ata, segs)
+    fl = falas(segs)
+    blob, conhecidos = contexto_auditoria(ata, fl)
     for lista, _pref in LISTAS:
         for it in ata.get(lista, []):
-            probs = []
-            t_seg = parse_t(it.get("t"))
-            i = _achar(it.get("citacao"), fl, t_seg)
-            if i is None:
-                it["verificado"] = False
-                probs.append("citação não localizada na transcrição")
-            else:
-                it["verificado"] = True
-                t_real = fmt_t(fl[i]["start"])
-                if t_seg is None or abs(fl[i]["start"] - t_seg) > 5:
-                    probs.append(f"timestamp corrigido de {it.get('t')} para {t_real}")
-                    it["t"] = t_real
-            manual = set(it.get("manual") or [])     # campos definidos pelo Pedro depois
-            for campo, dito in (("prazo", "prazo_dito"), ("revisar_em", "revisar_em_dito")):
-                if campo not in it or not it.get(campo) or campo in manual:
-                    continue
-                # a expressão tem de estar DITA perto da fala — a citação sozinha não basta,
-                # porque é o próprio Claude que a escreve
-                ok = (i is not None and _expressao_perto(it.get(dito), fl, i)
-                      and _data_coerente(it[campo], it.get(dito), ata.get("data")))
-                if not ok:
-                    probs.append(f"{campo} '{it[campo]}' removido: a expressão dita "
-                                 f"('{it.get(dito)}') não foi localizada ou não bate com a data")
-                    it[campo] = None
-            for campo in ("dono", "quem"):
-                v = it.get(campo)
-                if v and campo not in manual and norm(v) not in conhecidos and not _contem(v, blob):
-                    probs.append(f"{campo} '{v}' não aparece na transcrição nem nos participantes")
-            it["problemas"] = probs
+            auditar_item(it, fl, blob, conhecidos, ata.get("data"))
     auditar_momentos(ata, fl)
     ata["lacunas"] = lacunas(ata)
     return ata
@@ -418,17 +446,25 @@ def falantes_resolvidos(ata):
     return True
 
 
-def lacunas(ata):
+def lacunas_participantes(ata, citados, fatia_min=0.05):
     out = []
-    citados = {it.get(c) for k, _ in LISTAS for it in ata.get(k, []) for c in ("dono", "quem")}
     for p in ata.get("participantes", []):
         # rótulo com fala ínfima (cauda do diarizador) não vira lacuna — só ruído
-        relevante = p.get("fatia", 1) >= 0.05 or p["rotulo"] in citados
+        relevante = p.get("fatia", 1) >= fatia_min or p["rotulo"] in citados
         if not p.get("nome"):
             if relevante:
                 out.append({"ref": p["rotulo"], "falta": "nome do falante"})
         elif not p.get("confirmado"):
             out.append({"ref": p["rotulo"], "falta": f"confirmar que é {p['nome']}"})
+    return out
+
+
+def lacunas(ata):
+    if e_daily(ata):
+        import daily
+        return daily.lacunas(ata)
+    citados = {it.get(c) for k, _ in LISTAS for it in ata.get(k, []) for c in ("dono", "quem")}
+    out = lacunas_participantes(ata, citados)
     for e in ata.get("encaminhamentos", []):
         if not e.get("dono"):
             out.append({"ref": e["id"], "falta": "dono"})
@@ -456,8 +492,12 @@ def _voce_a_confirmar(sessao):
 
 
 def base(sessao, segs, meu_nome):
+    from sessao import fora_da_medicao
     m = sessao.m
     dur = max((s["end"] for s in segs), default=0)
+    if fora_da_medicao(sessao):
+        import daily
+        return daily.base(sessao, segs, meu_nome, dur)
     return {
         "schema": SCHEMA_ATA,
         "id": m["id"],
@@ -513,6 +553,9 @@ def montar(sessao, segs, bruto, gerado, meu_nome):
 
 
 def contagem(ata):
+    if e_daily(ata):
+        import daily
+        return daily.contagem(ata)
     return {k: len(ata.get(k, [])) for k, _ in LISTAS} | {
         "nao_verificados": sum(1 for k, _ in LISTAS for it in ata.get(k, [])
                                if it.get("verificado") is False),

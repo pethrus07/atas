@@ -15,6 +15,9 @@ Desenho (regra do Pedro: pouca informação, muito respiro): o que se usa depois
 reunião — decisões e encaminhamentos — vem primeiro; resumo em seguida; temas,
 perguntas, riscos, lacunas e a transcrição ficam recolhidos em <details>. Na
 impressão tudo abre (`impressao=True`). Borda só onde comunica estado.
+
+A daily da Parresia (`atas/daily@1`, 19/10/2026) tem render próprio, sempre interno (nunca
+entregável): "Com você" e as frentes no topo, depois por pessoa, decisões/encaminhamentos e momentos.
 """
 import datetime as _dt
 import html as _html
@@ -88,6 +91,10 @@ def _lista_participantes(ata, nome):
 
 # ── HTML ─────────────────────────────────────────────────────────────────────
 def html(ata, segs, cliente=False, impressao=False):
+    if _ata.e_daily(ata):
+        if cliente:
+            raise ValueError("daily é interna: não tem entregável")
+        return html_daily(ata, segs, impressao)
     nome = _nomeador(ata, cliente)
     tipo = ata.get("tipo") or "pessoal"
     tema = "ryze" if cliente else "interno"
@@ -346,6 +353,8 @@ code{font-family:var(--mono);font-size:.92em}
 
 # ── Markdown ─────────────────────────────────────────────────────────────────
 def markdown(ata, segs):
+    if _ata.e_daily(ata):
+        return markdown_daily(ata, segs)
     nome = _nomeador(ata, cliente=False)
     L = [f"# {ata.get('titulo')}", "",
          f"_{data_br(ata.get('data'))} · {ata.get('duracao_min')} min · "
@@ -412,3 +421,229 @@ def markdown(ata, segs):
     for f in _ata.falas(segs):
         L.append(f"**[{_ata.fmt_t(f['start'])}] {nome(f['speaker'])}:** {f['text']}")
     return "\n".join(L) + "\n"
+
+
+# ── daily (19/10/2026) ──────────────────────────────────────────────────────
+_TIPO_COM_VOCE = {"pedido": "pedido a você", "informacao": "para você saber", "decisao": "decisão"}
+_LISTAS_PESSOA_TXT = (("fez", "Fez"), ("vai_fazer", "Vai fazer"), ("travado", "Travado"))
+
+
+def _itens_da_mencao(ata, men):
+    """Os itens da daily que trataram uma menção de frente (mesmo card, ou mesma frente a até 60 s)."""
+    import daily as _daily
+    out = []
+    for k, it, _p in _daily.itens(ata):
+        if k in ("decisoes", "encaminhamentos") or it.get("verificado") is False:
+            continue
+        t = _ata.parse_t(it.get("t"))
+        perto = t is not None and abs(t - men["t_s"]) <= _daily.JANELA_CARD_S
+        if (it.get("card") and it["card"] in men["cards"]) or (perto and it.get("frente") == men["frente"]):
+            out.append(it["id"])
+    return out
+
+
+def html_daily(ata, segs, impressao=False):
+    import daily as _daily
+    nome = _nomeador(ata, cliente=False)
+
+    def origem(it):
+        marca = '<span class="alerta">origem não localizada</span>' if it.get("verificado") is False else ""
+        return f'<span class="ts">{e(it.get("t"))}</span>{marca}'
+
+    def card(it):
+        return f'<span class="card">{e(it["card"])}</span>' if it.get("card") else ""
+
+    def lacuna(txt):
+        return f'<span class="lacuna">{e(txt)}</span>'
+
+    blocos = []
+    if ata.get("status") == "pendente":
+        blocos.append('<section class="aviso-estado"><p>Esta daily ainda não foi estruturada. A transcrição '
+                      'está completa abaixo; rode <code>/ata</code> no Claude.</p></section>')
+
+    cv = ata.get("com_voce") or []
+    if cv:
+        lis = []
+        for it in cv:
+            meta = [_TIPO_COM_VOCE.get(it.get("tipo"), it.get("tipo") or ""),
+                    _daily.quem(ata, None, it.get("quem")) if it.get("quem") else None,
+                    it.get("frente")]
+            meta_html = " · ".join(e(m) for m in meta if m)
+            lis.append(f'<li><p>{e(it.get("o_que"))}</p><div class="meta">{card(it)}{meta_html}{origem(it)}</div></li>')
+        blocos.append(f'<section><h2>Com você</h2><ul class="itens">{"".join(lis)}</ul></section>')
+    elif ata.get("status") != "pendente":
+        blocos.append('<section><h2>Com você</h2><p class="lacuna">nada dirigido a você nesta daily</p></section>')
+
+    for f in ata.get("frentes") or []:
+        if not f["mencoes"]:
+            corpo = '<p class="lacuna">nada dito sobre esta frente</p>'
+        else:
+            lis = []
+            for men in f["mencoes"]:
+                ids = _itens_da_mencao(ata, men)
+                if ids:
+                    situ = "na ata: " + ", ".join(e(i) for i in ids)
+                elif men.get("tratada") is False:
+                    situ = lacuna("menção não tratada")
+                else:
+                    situ = ""
+                cards = "".join(f'<span class="card">{e(c)}</span>' for c in men["cards"])
+                lis.append(f'<li><p>{e(men["trecho"])}</p><div class="meta">{cards}{e(nome(men["rotulo"]))}'
+                           f'<span class="ts">{e(men["t"])}</span>{(" · " + situ) if situ else ""}</div></li>')
+            corpo = f'<ul class="itens">{"".join(lis)}</ul>'
+        blocos.append(f'<section><h2>{e(f["nome"])}</h2>{corpo}</section>')
+
+    pes = ata.get("pessoas") or []
+    if pes:
+        partes = []
+        for p in pes:
+            sub = []
+            for k, rot in _LISTAS_PESSOA_TXT:
+                its = p.get(k) or []
+                if its:
+                    sub.append(f'<h4>{rot}</h4><ul class="simples">' + "".join(
+                        f'<li>{card(it)}{e(it.get("item"))} {origem(it)}</li>' for it in its) + "</ul>")
+            partes.append(f'<div class="pessoa"><h3>{e(_daily.quem(ata, p.get("rotulo"), p.get("nome")))}</h3>'
+                          + ("".join(sub) or '<p class="lacuna">sem item com citação</p>') + "</div>")
+        blocos.append(f'<section><h2>Por pessoa</h2>{"".join(partes)}</section>')
+
+    dec = ata.get("decisoes") or []
+    if dec:
+        lis = [f'<li><p>{e(d["decisao"])}</p><div class="meta">{e(nome(d.get("quem")) or "")}{origem(d)}</div></li>'
+               for d in dec]
+        blocos.append(f'<section><h2>Decisões</h2><ul class="itens">{"".join(lis)}</ul></section>')
+    enc = ata.get("encaminhamentos") or []
+    if enc:
+        rows = "".join(
+            f'<tr><td>{e(x["acao"])}<div class="meta">{origem(x)}</div></td>'
+            f'<td>{e(nome(x.get("dono"))) if x.get("dono") else lacuna("a definir")}</td>'
+            f'<td class="prazo">{e(data_curta(x["prazo"])) if x.get("prazo") else lacuna("a definir")}</td></tr>'
+            for x in enc)
+        blocos.append('<section><h2>Encaminhamentos</h2><table class="enc"><thead><tr>'
+                      '<th>O quê</th><th>Quem</th><th>Até</th></tr></thead>'
+                      f'<tbody>{rows}</tbody></table></section>')
+
+    todas_falas = _ata.falas(segs)
+    if ata.get("momentos"):
+        blocos.append(_secao_momentos(ata["momentos"], todas_falas))
+
+    mais = []
+    if ata.get("resumo") or ata.get("contexto"):
+        mais.append("<h3>Resumo</h3>" + (f'<p class="ctx">{e(ata["contexto"])}</p>' if ata.get("contexto") else "")
+                    + (f'<p>{e(ata["resumo"])}</p>' if ata.get("resumo") else ""))
+    if ata.get("rodada"):
+        mais.append('<h3>Quem falou, pela rodada (pista, a confirmar no /ata)</h3><ul class="simples">' + "".join(
+            f'<li><b>{e(r["rotulo"])}</b> → {e(r["nome"])}? ({r["votos"]}×) <span class="ts">{e(r["evidencias"][0])}</span></li>'
+            for r in ata["rodada"]) + "</ul>")
+    if ata.get("lacunas"):
+        mais.append('<h3>Lacunas a fechar</h3><ul class="simples">' + "".join(
+            f'<li><b>{e(nome(l["ref"]))}</b> — {e(l["falta"])}</li>' for l in ata["lacunas"]) + "</ul>")
+    aberto = " open" if impressao else ""
+    if mais:
+        blocos.append(f'<details class="mais"{aberto}><summary>Mais</summary>'
+                      f'<div class="mais-corpo">{"".join(mais)}</div></details>')
+
+    falas = []
+    for f in todas_falas:
+        eu = f["speaker"] == "Você"
+        falas.append(f'<div class="fala{" eu" if eu else ""}" id="f-{int(f["start"])}"><div class="quem">'
+                     f'{e(nome(f["speaker"]))}<span class="ts">{_ata.fmt_t(f["start"])}</span>'
+                     f'</div><div class="txt">{e(f["text"])}</div></div>')
+    blocos.append(f'<details class="transc"{aberto}><summary>Transcrição</summary>'
+                  f'<div class="falas">{"".join(falas) or "<p>Sem falas reconhecidas.</p>"}</div></details>')
+
+    n_pes = len([p for p in ata.get("participantes", []) if p["rotulo"] != "Você"
+                 and (p.get("nome") or p.get("fatia", 0) >= _daily.FATIA_RELEVANTE)])
+    meta_topo = " · ".join(x for x in [data_br(ata.get("data")),
+                                       f"{ata.get('duracao_min')} min" if ata.get("duracao_min") else None,
+                                       f"{n_pes} vozes além de você" if n_pes else None] if x)
+    topo = _tema.capa(ata.get("titulo"), "Daily · Parresia", meta_topo, selo="Uso interno")
+    rodape = _tema.rodape("daily · uso interno · fora da medição · gerado nesta máquina")
+    return (f'<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">'
+            f'<meta name="viewport" content="width=device-width, initial-scale=1">'
+            f'<meta name="robots" content="noindex"><title>{e(ata.get("titulo"))}</title>'
+            f'{_tema.FONTES}<style>{_tema.CSS}{CSS_BASE}{CSS_DAILY}</style>'
+            f'</head><body class="interno"><div class="wrap">{topo}{"".join(blocos)}'
+            f'{rodape}</div></body></html>')
+
+
+CSS_DAILY = """
+.card{font-family:var(--mono);font-size:11.5px;color:var(--accent);margin-right:8px;white-space:nowrap}
+.pessoa{margin:0 0 30px}
+.pessoa h3{margin:0 0 6px}
+h4{font-size:11px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin:14px 0 6px}
+"""
+
+
+def markdown_daily(ata, segs):
+    import daily as _daily
+    nome = _nomeador(ata, cliente=False)
+
+    def card(it):
+        return f"`{it['card']}` " if it.get("card") else ""
+
+    def ok(it):
+        return "" if it.get("verificado") is not False else " ⚠ origem não localizada"
+
+    L = [f"# {ata.get('titulo')}", "",
+         f"_{data_br(ata.get('data'))} · {ata.get('duracao_min')} min · Daily da Parresia (fora da medição) · "
+         f"ata `{ata['id']}` ({ata.get('status')})_", ""]
+    parts = [f"{p['rotulo']} = {p['nome'] or '?'}{'' if p.get('confirmado') else ' (a confirmar)'}"
+             for p in ata.get("participantes", []) if p.get("nome") or p.get("fatia", 1) >= _daily.FATIA_RELEVANTE]
+    if parts:
+        L += ["**Quem falou:** " + " · ".join(parts), ""]
+    L += ["## Com você", ""]
+    if ata.get("com_voce"):
+        for it in ata["com_voce"]:
+            quem_ = _daily.quem(ata, None, it.get("quem")) if it.get("quem") else "?"
+            L.append(f"- **{it['id']}** {card(it)}{it.get('o_que')} — {_TIPO_COM_VOCE.get(it.get('tipo'), it.get('tipo'))}"
+                     f" · {quem_}{' · ' + it['frente'] if it.get('frente') else ''} · [{it.get('t')}]{ok(it)}")
+    else:
+        L.append("_nada dirigido a você_")
+    L.append("")
+    for f in ata.get("frentes") or []:
+        L += [f"## {f['nome']}", ""]
+        if not f["mencoes"]:
+            L.append("_nada dito sobre esta frente_")
+        for men in f["mencoes"]:
+            ids = _itens_da_mencao(ata, men)
+            situ = ("na ata: " + ", ".join(ids)) if ids else ("**menção não tratada**" if men.get("tratada") is False else "")
+            cards = " ".join(f"`{c}`" for c in men["cards"])
+            L.append(f"- [{men['t']}] {nome(men['rotulo'])}: {cards + ' ' if cards else ''}\"{men['trecho']}\""
+                     + (f" · {situ}" if situ else ""))
+        L.append("")
+    if ata.get("pessoas"):
+        L += ["## Por pessoa", ""]
+        for p in ata["pessoas"]:
+            L += [f"### {_daily.quem(ata, p.get('rotulo'), p.get('nome'))}", ""]
+            for k, rot in _LISTAS_PESSOA_TXT:
+                for it in p.get(k) or []:
+                    L.append(f"- _{rot.lower()}_ **{it['id']}** {card(it)}{it.get('item')} [{it.get('t')}]{ok(it)}")
+            L.append("")
+    if ata.get("decisoes"):
+        L += ["## Decisões", ""] + [f"- **{d['id']}** {d['decisao']} — {nome(d.get('quem')) or '?'} · [{d.get('t')}]{ok(d)}"
+                                    for d in ata["decisoes"]] + [""]
+    if ata.get("encaminhamentos"):
+        L += ["## Encaminhamentos", "", "| | O quê | Quem | Até | Origem |", "|---|---|---|---|---|"]
+        L += [f"| {x['id']} | {x['acao']} | {nome(x.get('dono')) or '—'} | {x.get('prazo') or '—'} | {x.get('t')}"
+              f"{' ⚠' if x.get('verificado') is False else ''} |" for x in ata["encaminhamentos"]] + [""]
+    if ata.get("momentos"):
+        L += ["## Momentos marcados", ""]
+        for mo in ata["momentos"]:
+            frase, vazio = texto_momento(mo)
+            L.append(f"- **{mo['id']}** [{mo.get('hora')}] " + (f"{frase} — \"{mo['citacao']}\" [{mo.get('t')}]"
+                                                              if frase else f"_{vazio}_")
+                     + (" · na ata: " + ", ".join(mo["itens"]) if mo.get("itens") else ""))
+        L.append("")
+    if ata.get("resumo"):
+        L += ["## Resumo", "", ata.get("contexto") or "", "", ata["resumo"], ""]
+    if ata.get("rodada"):
+        L += ["## Quem falou, pela rodada (pista)", ""] + [
+            f"- {r['rotulo']} → {r['nome']}? ({r['votos']}×): {r['evidencias'][0]}" for r in ata["rodada"]] + [""]
+    if ata.get("lacunas"):
+        L += ["## Lacunas", ""] + [f"- {l['ref']}: {l['falta']}" for l in ata["lacunas"]] + [""]
+    L += ["## Transcrição", ""]
+    for f in _ata.falas(segs):
+        L.append(f"**[{_ata.fmt_t(f['start'])}] {nome(f['speaker'])}:** {f['text']}")
+    return "\n".join(L) + "\n"
+

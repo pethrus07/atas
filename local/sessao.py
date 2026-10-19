@@ -52,8 +52,38 @@ TIPOS_PUBLICAVEIS = {"cliente"}
 # 30/09), então a reunião fica "pendente" — sem entregável, sem publicação, sem avaliação — até
 # `atas.py tipo <id> <tipo>`. Não entra em TIPOS: a janela nunca oferece "pendente".
 TIPO_PENDENTE = "pendente"
-# Formato da reunião de cliente (opcional; o Raio-X usa para a faixa da fatia de fala, §17).
-FORMATOS = ("descoberta", "demo", "alinhamento")
+# Formato da reunião, POR TIPO (opcional; None = "não sei" / "reunião"):
+#   cliente  → o Raio-X usa para a faixa da fatia de fala (§17)
+#   parresia → "daily" (19/10/2026): a reunião diária da Parresia, FORA DE TODA MEDIÇÃO (§21)
+FORMATOS = {"cliente": ("descoberta", "demo", "alinhamento"), "parresia": ("daily",)}
+FORMATO_DAILY = "daily"
+
+
+def formatos_do_tipo(tipo):
+    """Os formatos que valem para o tipo (vazio = o tipo não tem formato). O tipo pendente (áudio do
+    celular sem tipo) aceita qualquer um: `atas.py tipo` limpa o que não combinar depois."""
+    if tipo == TIPO_PENDENTE:
+        return tuple(f for fs in FORMATOS.values() for f in fs)
+    return FORMATOS.get(tipo, ())
+
+
+def formato_valido(tipo, formato):
+    return not formato or formato in formatos_do_tipo(tipo)
+
+
+class ForaDaMedicao(RuntimeError):
+    """Tentativa de medir (Raio-X, histórico, vault, avaliação) uma reunião que fica fora da medição."""
+
+
+def fora_da_medicao(x):
+    """A reunião fica FORA de toda medição? Hoje: a daily da Parresia (pedido do Pedro, 19/10/2026 —
+    ele fala ~9% numa daily de 1 h com 7+ pessoas; medir a fala dele ali só sujaria o histórico).
+
+    `x`: uma Sessao, o manifesto (sessao.json), uma linha do historico.jsonl ou a ata.json — tudo
+    que tem `formato`. É o predicado ÚNICO usado por pipeline, app, atas.py, avaliar e analise_fala:
+    ninguém compara a string "daily" por conta própria."""
+    m = getattr(x, "m", x)
+    return isinstance(m, dict) and m.get("formato") == FORMATO_DAILY
 
 BATIDA_S = 5          # intervalo da batida enquanto grava
 ORFA_APOS_S = 45      # batida mais velha que isso = gravador morto
@@ -123,13 +153,15 @@ class Sessao:
     @classmethod
     def criar(cls, titulo, tipo, projeto="", participantes=None, raiz=None, formato=None,
               quando=None, pendente_ok=False):
-        """`formato`: descoberta/demo/alinhamento (só faz sentido em cliente; vazio = "não sei").
-        `quando`: datetime do início (importação de áudio; padrão = agora). `pendente_ok`: aceita o
-        tipo "pendente" (só o importador do celular usa)."""
+        """`formato`: o formato do tipo (FORMATOS; vazio = "não sei"/"reunião"): cliente →
+        descoberta/demo/alinhamento; parresia → daily. `quando`: datetime do início (importação de
+        áudio; padrão = agora). `pendente_ok`: aceita o tipo "pendente" (só o importador do celular usa)."""
         if tipo not in TIPOS and not (pendente_ok and tipo == TIPO_PENDENTE):
             raise ValueError(f"tipo inválido: {tipo!r} (use {', '.join(TIPOS)})")
-        if formato and formato not in FORMATOS:
-            raise ValueError(f"formato inválido: {formato!r} (use {', '.join(FORMATOS)})")
+        if not formato_valido(tipo, formato):
+            validos = formatos_do_tipo(tipo)
+            raise ValueError(f"formato inválido para {tipo}: {formato!r} "
+                             f"(use {', '.join(validos) if validos else 'nenhum: este tipo não tem formato'})")
         raiz = pathlib.Path(raiz) if raiz else SALVAS
         raiz.mkdir(parents=True, exist_ok=True)
         quando_txt = (quando or _dt.datetime.now()).strftime("%d/%m/%Y %H:%M")
@@ -342,6 +374,16 @@ def a_retomar(raiz=None):
         if s.orfa() or est == "falhou" or (est == "pronto_com_falhas" and set(falhou) & essenciais):
             out.append(s)
     return out
+
+
+def titulo_da_proxima_daily(s, raiz=None):
+    """O título da daily seguinte do mesmo dia (o Pedro tem duas seguidas, 19/10/2026): o título desta
+    sem o "(N)" do fim + "(N)" = o número da próxima daily do dia. "Daily" → "Daily (2)" → "Daily (3)"."""
+    base = re.sub(r"\s*\(\d+\)\s*$", "", (s.m.get("titulo") or "Daily").strip()) or "Daily"
+    dia = str(s.m.get("inicio") or s.m.get("criado") or "")[:10]
+    do_dia = [x for x in listar(raiz or s.pasta.parent) if fora_da_medicao(x)
+              and str(x.m.get("inicio") or x.m.get("criado") or "")[:10] == dia]
+    return f"{base} ({max(2, len(do_dia) + 1)})"
 
 
 def ultima(raiz=None):

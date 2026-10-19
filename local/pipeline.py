@@ -18,6 +18,10 @@ Propriedades que valem para todas:
     processarem a mesma sessão juntos (dois processos aposentando o mesmo PCM perdiam
     áudio — achado da revisão de 30/09/2026).
 
+Daily da Parresia (formato "daily", 19/10/2026): fora de toda medição — `raio_x` e `avaliacao` ficam
+"pulada" ("daily: fora da medição"), e a ata usa o esquema `atas/daily@1` (daily.py). O predicado é
+um só, `sessao.fora_da_medicao`; analise_fala e avaliar têm a mesma trava no ponto de escrita.
+
 Roteamento por tipo (decisões 1 e 5 de 30/09/2026): só `cliente` gera entregável RYZE e
 pode ser publicado — e **só quando o Pedro manda** (botão na tela "Pronto", ou
 `atas.py publicar`), nunca sozinho. Mudar o tipo para interno tira a página do ar.
@@ -30,7 +34,9 @@ import ata as _ata
 import config as _config
 import render
 from sessao import (TIPOS_PUBLICAVEIS, Batedor, ORFA_APOS_S, agora_iso, escrever_json,
-                    ler_json, listar)
+                    fora_da_medicao, ler_json, listar)
+
+FORA_DA_MEDICAO = "daily: fora da medição"
 
 
 class Ocupada(RuntimeError):
@@ -280,10 +286,13 @@ def processar(s, cfg=None, log=print, forcar=(), estruturar=None, publicar_=None
                     s.etapa("estrutura", "pulada", motivo)
                 else:
                     c = _ata.contagem(a)
-                    s.etapa("estrutura", "ok",
-                            f"{c['decisoes']} decisões · {c['encaminhamentos']} encaminhamentos"
-                            f" · {c['nao_verificados']} sem origem · {c['lacunas']} lacunas",
-                            custo_usd=(a.get("gerado") or {}).get("custo_usd"))
+                    if _ata.e_daily(a):
+                        import daily as _daily
+                        detalhe = _daily.resumo_contagem(c)
+                    else:
+                        detalhe = (f"{c['decisoes']} decisões · {c['encaminhamentos']} encaminhamentos"
+                                   f" · {c['nao_verificados']} sem origem · {c['lacunas']} lacunas")
+                    s.etapa("estrutura", "ok", detalhe, custo_usd=(a.get("gerado") or {}).get("custo_usd"))
                 _salvar_ata(s, a)
 
         # marca acrescentada depois de a ata existir (`atas.py marcar`) aparece já, como pendente
@@ -301,7 +310,9 @@ def processar(s, cfg=None, log=print, forcar=(), estruturar=None, publicar_=None
 
         # ── Raio-X da fala (interno) ──
         rx = {"m": None}
-        if s.m.get("legado"):
+        if fora_da_medicao(s):
+            s.etapa("raio_x", "pulada", FORA_DA_MEDICAO)
+        elif s.m.get("legado"):
             s.etapa("raio_x", "pulada", "reunião anterior à v2 já está no histórico")
         elif voce_a_confirmar(s):
             s.etapa("raio_x", "pendente", VOCE_PENDENTE)
@@ -338,8 +349,10 @@ def processar(s, cfg=None, log=print, forcar=(), estruturar=None, publicar_=None
             _rodar(s, "audio", _aud, log)
 
         # ── avaliação interna (v2.1): afirmações conferidas, valores, negociação, postura ──
-        # Só reunião de cliente/Parresia com ata estruturada; nunca vai ao entregável.
-        if (a.get("status") in ("estruturada", "revisada") and _aval.deve_avaliar(s, segs, cfg)
+        # Só reunião de cliente/Parresia com ata estruturada; nunca vai ao entregável. A daily fica fora.
+        if fora_da_medicao(s):
+            s.etapa("avaliacao", "pulada", FORA_DA_MEDICAO)
+        elif (a.get("status") in ("estruturada", "revisada") and _aval.deve_avaliar(s, segs, cfg)
                 and voce_a_confirmar(s)):
             s.etapa("avaliacao", "pendente", VOCE_PENDENTE)
         elif (a.get("status") in ("estruturada", "revisada") and _aval.deve_avaliar(s, segs, cfg)

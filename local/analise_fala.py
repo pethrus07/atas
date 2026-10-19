@@ -14,13 +14,22 @@ Saída em Projetos/atas/fala-analise/ (fora do git, só nesta máquina):
 e a nota `sinapse/08-CRESCIMENTO/fala-raio-x.md`, que **não leva o título da reunião**:
 título costuma ter nome de cliente ou assunto da Parresia, e o vault é outro
 repositório. Na nota cada reunião aparece por data + tipo (v2, 30/09/2026).
+
+A daily da Parresia (formato "daily", 19/10/2026) fica FORA de tudo isto, com a trava no ponto de
+escrita: `processar`, `_upsert_historico` e `_atualizar_vault` levantam `ForaDaMedicao` para uma linha
+daily; o painel e a nota são sempre regenerados sem linha daily (`linhas_medidas`); a mediana das
+últimas 5 nunca conta uma daily (`ler_historico`). `remover_reuniao` tira uma reunião já medida.
 """
 import json
 import pathlib
 import re
 from collections import Counter
 
-FALA_DIR = pathlib.Path(__file__).parent.parent / "fala-analise"
+# ATAS_FALA (19/10/2026): aponta o histórico/painel para uma CÓPIA, como o ATAS_SALVAS faz com as
+# reuniões — ensaio de `atas.py formato <id> daily` numa cópia sem tocar no fala-analise/ de verdade
+import os as _os
+FALA_DIR = (pathlib.Path(_os.environ["ATAS_FALA"]) if _os.environ.get("ATAS_FALA")
+            else pathlib.Path(__file__).parent.parent / "fala-analise")
 _WORD = re.compile(r"[a-zàáâãéêíóôõúûüç]+")
 
 # v3 (14/10/2026): muleta PURA (não carrega nada: dá para tirar sem mudar a frase) separada de
@@ -671,7 +680,14 @@ def compromissos(segments, nomes=None, janela_s=20, max_frases=15):
 
 
 # ── fatia de fala por tipo de reunião (v3) ──────────────────────────────────────────────────
-from sessao import FORMATOS  # noqa: E402  (descoberta · demo · alinhamento; um lugar só)
+from sessao import FORMATOS as _FORMATOS_POR_TIPO  # noqa: E402  (um lugar só)
+from sessao import ForaDaMedicao, fora_da_medicao  # noqa: E402
+FORMATOS = _FORMATOS_POR_TIPO["cliente"]           # o Raio-X só lê formato de cliente (descoberta · demo · alinhamento)
+
+
+def linhas_medidas(linhas):
+    """As linhas que entram em painel, nota do vault e mediana: nunca uma daily (§21)."""
+    return [r for r in linhas if not fora_da_medicao(r)]
 
 
 def numero_de_falantes(segments, participantes=None):
@@ -724,7 +740,7 @@ def ler_historico(pasta=None):
                 except ValueError:
                     pass
     out.sort(key=lambda r: str(r.get("data", "")))
-    return out
+    return linhas_medidas(out)
 
 
 def anteriores(hist, reg_id, data, minimo=1000, n=5):
@@ -1037,6 +1053,8 @@ def _stamp(quando):
 
 
 def _upsert_historico(reg, pasta):
+    if fora_da_medicao(reg):
+        raise ForaDaMedicao("daily: fora da medição — não entra no historico.jsonl")
     hist_path = pasta / "historico.jsonl"
     linhas = []
     if hist_path.exists():
@@ -1226,6 +1244,8 @@ def _atualizar_vault(linhas):
     None se o vault não existe nesta máquina; um erro de escrita LEVANTA (a etapa
     raio_x do pipeline registra) — na v1 era engolido em silêncio."""
     import os
+    if any(fora_da_medicao(r) for r in linhas):
+        raise ForaDaMedicao("daily: fora da medição — não entra na nota do vault (filtre com linhas_medidas)")
     base = os.environ.get("SINAPSE_VAULT")
     vault = pathlib.Path(base) if base else pathlib.Path(__file__).parents[2] / "sinapse"
     destino = vault / "08-CRESCIMENTO"
@@ -1272,7 +1292,10 @@ def processar(segments, titulo, quando, pasta=None, tipo=None, sessao_id=None, v
     alimenta o Sinapse. Retorna os caminhos gerados (vault=None se não gravou).
     v2.1: ritmo/turnos/interrupções, blocos de 30 min, voz (se `audio_mic` existir) e metas.
     v3 (14/10/2026): leitura de cada medida contra a mediana das últimas 5 reuniões; fatia de fala
-    pelo tipo/`formato`/nº de pessoas; compromissos com dono e prazo."""
+    pelo tipo/`formato`/nº de pessoas; compromissos com dono e prazo.
+    Daily (19/10/2026): levanta ForaDaMedicao ANTES de calcular ou escrever qualquer coisa."""
+    if fora_da_medicao({"formato": formato}):
+        raise ForaDaMedicao("daily: fora da medição (sem Raio-X)")
     pasta = pathlib.Path(pasta) if pasta else FALA_DIR
     pasta.mkdir(parents=True, exist_ok=True)
     reg_id = sessao_id or f"{quando}|{titulo}"
@@ -1281,7 +1304,7 @@ def processar(segments, titulo, quando, pasta=None, tipo=None, sessao_id=None, v
     safe = "".join(c if c.isalnum() or c in " -_" else "_" for c in titulo).strip() or "reuniao"
     reg = {"id": reg_id, "data": quando, "titulo": titulo,
            "safe": safe, "tipo": tipo, "formato": metrics["contexto"]["formato"], "metrics": metrics}
-    linhas = _upsert_historico(reg, pasta)
+    linhas = linhas_medidas(_upsert_historico(reg, pasta))
     md = _relatorio_md(reg, pasta)
     pagina = _escrever_pagina(reg, pasta, avaliacao_md)
     dash = _escrever_painel(linhas, pasta)
@@ -1302,6 +1325,7 @@ def _escrever_pagina(reg, pasta, avaliacao_md=None):
 
 def _escrever_painel(linhas, pasta):
     import raio_x_html
+    linhas = linhas_medidas(linhas)
     dash = pasta / "raio-x.html"
     dash.write_text(raio_x_html.painel(linhas, lambda r: _arquivo_pagina(r) if (pasta / _arquivo_pagina(r)).exists()
                                        else None), encoding="utf-8")
@@ -1317,7 +1341,7 @@ def pagina_da_reuniao(sessao_id, avaliacao_md=None, pasta=None):
         return None
     linhas = [json.loads(ln) for ln in hist.read_text(encoding="utf-8").splitlines() if ln.strip()]
     reg = next((r for r in linhas if r.get("id") == sessao_id), None)
-    if not reg or "safe" not in reg:
+    if not reg or "safe" not in reg or fora_da_medicao(reg):
         return None
     destino = _escrever_pagina(reg, pasta, avaliacao_md)
     _escrever_painel(linhas, pasta)
@@ -1337,4 +1361,43 @@ def reescrever_nota(pasta=None, tipos=None):
             r["tipo"] = tipos[r["id"]]
     hist.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in linhas) + "\n",
                     encoding="utf-8")
-    return _atualizar_vault(linhas)
+    return _atualizar_vault(linhas_medidas(linhas))
+
+
+def remover_reuniao(sessao_id, pasta=None, quando=None):
+    """Tira uma reunião JÁ medida de toda a medição (a reunião virou daily depois: `atas.py formato <id>
+    daily`). Backup do histórico (`historico.jsonl.bak-<data>`, não sobrescreve um backup do mesmo dia),
+    remove a linha, apaga a página e o relatório .md dela em fala-analise/, regenera o painel e a nota do
+    vault (sem nenhuma linha daily). Devolve {"linha", "backup", "apagados", "vault"}."""
+    import datetime as _dt
+    import shutil
+    pasta = pathlib.Path(pasta) if pasta else FALA_DIR
+    hist = pasta / "historico.jsonl"
+    out = {"linha": False, "backup": None, "apagados": [], "vault": None}
+    if not hist.exists():
+        return out
+    brutas = [json.loads(ln) for ln in hist.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    reg = next((r for r in brutas if r.get("id") == sessao_id), None)
+    if reg is None:
+        return out
+    dia = (quando or _dt.date.today()).isoformat()
+    bak = pasta / f"historico.jsonl.bak-{dia}"
+    n = 2
+    while bak.exists():
+        bak = pasta / f"historico.jsonl.bak-{dia}-{n}"
+        n += 1
+    shutil.copyfile(hist, bak)
+    out["backup"] = bak
+    resto = [r for r in brutas if r.get("id") != sessao_id]
+    hist.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in resto), encoding="utf-8")
+    out["linha"] = True
+    if "safe" in reg:
+        for nome in (_arquivo_pagina(reg), f"{_stamp(reg['data'])}_{reg['safe']}.md"):
+            alvo = pasta / nome
+            if alvo.exists():
+                alvo.unlink()
+                out["apagados"].append(alvo)
+    medidas = linhas_medidas(resto)
+    _escrever_painel(medidas, pasta)
+    out["vault"] = _atualizar_vault(medidas)
+    return out

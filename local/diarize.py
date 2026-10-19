@@ -7,6 +7,7 @@ porque o sherpa-onnx não tem roda para o 3.14. É chamado pelo transcribe.py po
 subprocess. Aqui só entram numpy e sherpa_onnx.
 
 Uso (CLI): python diarize.py <audio.pcm|audio.wav> [threshold] [num_speakers] [max_falantes] [referencia.wav]
+                             [fatia_min] [min_segundos]      ← o teto da daily (19/10/2026); "" = sem referência
 Saída (stdout, última linha): JSON
     {"turnos": [{start, end, speaker}], "falantes": N, "modo": "...", "brutos": M,
      "similaridade": {speaker: cosseno com a voz de referência}}   ← só com referência
@@ -23,6 +24,9 @@ Como o número de falantes é decidido (v2, 30/09/2026):
      relevantes do que o agrupamento abriu, roda de novo cravando esse número
      (limitado a max_falantes). É o conserto do "1 pessoa = 78 Participantes" de
      08/09/2026: a cauda de clusters minúsculos era a mesma voz variando pelo codec.
+     O teto é parametrizável (fatia_min, min_segundos) só para a daily da Parresia (19/10/2026):
+     com 8 pessoas em 1 h, quem fala 1 min tem ~1,7% da fala e seria apagado pelos 5%/20 s da
+     reunião normal. Sem esses argumentos, o comportamento é o de sempre (FATIA_MIN, MIN_SEG_S).
 """
 import json
 import pathlib
@@ -122,7 +126,8 @@ def similaridades(audio, turnos, referencia, max_s=30.0, min_s=2.0):
     return out
 
 
-def diarizar(caminho, threshold=0.5, num_speakers=-1, max_falantes=6, referencia=None):
+def diarizar(caminho, threshold=0.5, num_speakers=-1, max_falantes=6, referencia=None,
+             fatia_min=FATIA_MIN, min_seg=MIN_SEG_S):
     audio, sr = _ler(caminho)
     if sr != SR:
         raise RuntimeError(f"áudio a {sr}Hz, esperado {SR}Hz")
@@ -135,7 +140,7 @@ def diarizar(caminho, threshold=0.5, num_speakers=-1, max_falantes=6, referencia
     else:
         turnos = _rodar(audio, threshold, -1)
         brutos = len({t["speaker"] for t in turnos})
-        n = max(1, min(int(max_falantes), relevantes(turnos)))
+        n = max(1, min(int(max_falantes), relevantes(turnos, fatia_min, min_seg)))
         if n < brutos:
             turnos = _rodar(audio, threshold, n)
             modo = "teto"
@@ -157,4 +162,6 @@ if __name__ == "__main__":
     nsp = int(sys.argv[3]) if len(sys.argv) > 3 else -1
     mx = int(sys.argv[4]) if len(sys.argv) > 4 else 6
     ref = sys.argv[5] if len(sys.argv) > 5 and sys.argv[5] else None
-    print(json.dumps(diarizar(arq, thr, nsp, mx, ref), ensure_ascii=False))
+    fmin = float(sys.argv[6]) if len(sys.argv) > 6 and sys.argv[6] else FATIA_MIN
+    smin = float(sys.argv[7]) if len(sys.argv) > 7 and sys.argv[7] else MIN_SEG_S
+    print(json.dumps(diarizar(arq, thr, nsp, mx, ref, fmin, smin), ensure_ascii=False))

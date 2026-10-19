@@ -30,7 +30,9 @@ TIPOS_AVALIADOS = ("cliente", "parresia")
 
 
 def deve_avaliar(sessao, segs, cfg):
-    if not cfg.get("avaliar", True) or sessao.tipo not in TIPOS_AVALIADOS:
+    from sessao import fora_da_medicao
+    # a daily da Parresia (19/10/2026) fica fora de toda medição, inclusive desta
+    if not cfg.get("avaliar", True) or sessao.tipo not in TIPOS_AVALIADOS or fora_da_medicao(sessao):
         return False
     dur = max((s["end"] for s in segs), default=0)
     return dur >= 60 * float(cfg.get("avaliar_acima_min", 15))
@@ -136,6 +138,9 @@ def prompt(sessao, ata, metricas, cfg):
 
 def avaliar(sessao, segs, ata, metricas, cfg, log=print):
     """Gera avaliacao-interna.md. Devolve (caminho, meta). Levanta com o motivo se falhar."""
+    from sessao import ForaDaMedicao, fora_da_medicao
+    if fora_da_medicao(sessao):                    # trava no ponto de escrita, não só no pipeline
+        raise ForaDaMedicao("daily: fora da medição (sem avaliação interna)")
     exe = _config.claude_cli(cfg)
     if not exe:
         raise RuntimeError("claude.exe não encontrado")
@@ -196,8 +201,29 @@ def escrever_html(sessao, md_path):
 
 def mais_recente(sessao):
     """A avaliação que vale: a revisada à mão (avaliacao-interna.md) ou a automática mais nova."""
+    from sessao import fora_da_medicao
+    if fora_da_medicao(sessao):                    # daily: a avaliação antiga virou *.antes-daily.*
+        return None
     feita = sessao.caminho(ARQUIVO)
     if feita.exists():
         return feita
-    autos = sorted(sessao.pasta.glob("avaliacao-interna.auto-*.md"))
+    autos = sorted(x for x in sessao.pasta.glob("avaliacao-interna.auto-*.md") if ".antes-daily" not in x.name)
     return autos[-1] if autos else None
+
+
+def tirar_da_medicao(sessao):
+    """A reunião virou daily (`atas.py formato <id> daily`): a avaliação interna já escrita NÃO é
+    apagada — é renomeada para `*.antes-daily.*` (avaliacao-interna.antes-daily.md/.html). Devolve os
+    nomes novos."""
+    feitos = []
+    for x in sorted(sessao.pasta.glob("avaliacao-interna*")):
+        if ".antes-daily" in x.name or x.suffix not in (".md", ".html"):
+            continue
+        novo = x.with_name(f"{x.stem}.antes-daily{x.suffix}")
+        n = 2
+        while novo.exists():
+            novo = x.with_name(f"{x.stem}.antes-daily-{n}{x.suffix}")
+            n += 1
+        x.rename(novo)
+        feitos.append(novo)
+    return feitos

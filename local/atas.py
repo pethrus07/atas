@@ -15,7 +15,8 @@ Atas — linha de comando. É a interface do /ata (Claude) e o plano B da janela
     python atas.py decisoes <id>          as decisões no formato do log (decisoes.jsonl)
     python atas.py publicar <id>          publica (só cliente; decisão do Pedro) [--forcar]
     python atas.py tipo <id> <tipo>       corrige/confirma o tipo [--projeto P]; interno tira do ar
-    python atas.py formato <id> <f>       formato da reunião de cliente: descoberta, demo, alinhamento, nenhum
+    python atas.py formato <id> <f>       formato: cliente → descoberta, demo, alinhamento; parresia → daily; nenhum
+    python atas.py daily <termo>          busca só nas dailies [--pessoa X] [--frente "Frota WP"] [--desde AAAA-MM-DD]
     python atas.py marcar <id> <mm:ss>... marca momentos depois da reunião [--remover]
     python atas.py marcas <id>            os momentos marcados e o que a ata achou em cada um
     python atas.py importar <áudio>       reunião presencial gravada no celular --titulo T [--tipo] [--projeto]
@@ -30,7 +31,7 @@ Atas — linha de comando. É a interface do /ata (Claude) e o plano B da janela
     python atas.py ao-vivo                caminho da transcrição ao vivo da gravação em curso
     python atas.py fala <id|ultima>       Raio-X da Fala: ritmo, turnos, cansaço, voz e metas [--sem-abrir]
     python atas.py fala --recalcular [--saida PASTA]   refaz o Raio-X das reuniões com as regras atuais (sem vault)
-    python atas.py calibrar <id>          diarização com vários limiares no áudio guardado
+    python atas.py calibrar <id>          diarização com vários limiares no áudio guardado [--daily]
     python atas.py importar-legado        traz as atas soltas de antes da v2
     python atas.py limpar-audio           aplica a retenção do áudio
     python atas.py treinar                treino de fala sozinho (só o microfone) [--tipo reuniao|tema]
@@ -104,6 +105,8 @@ def c_mostrar(a):
     extra = ""
     if s.tipo == "cliente":
         extra += f" · formato {s.m.get('formato') or '— (não informado)'}"
+    elif s.tipo == "parresia":
+        extra += (" · formato daily (fora da medição)" if _sessao.fora_da_medicao(s) else " · formato reunião")
     if s.celular:
         cel = s.m.get("celular") or {}
         extra += (" · áudio do celular, quem é \"Você\": "
@@ -240,8 +243,8 @@ def _depois_de_confirmar_voce(s):
     s = Sessao.abrir(s.pasta)
     if s.celular and (s.m.get("celular") or {}).get("voce_confirmado") \
             and s.status_etapa("raio_x") == "pendente":
-        raio_x(s)
-        print("  Raio-X da fala calculado (atas.py fala <id> mostra a leitura)")
+        if raio_x(s) is not None:
+            print("  Raio-X da fala calculado (atas.py fala <id> mostra a leitura)")
 
 
 def c_confirmar(a):
@@ -357,8 +360,15 @@ def c_tipo(a):
     if a.projeto is not None:
         s.m["projeto"] = a.projeto
     s.m["classificacao"] = "confirmada"
+    formato_antes = s.m.get("formato")
+    if not _sessao.formato_valido(a.tipo, formato_antes):
+        s.m["formato"] = None                    # formato de outro tipo (ex.: daily → cliente) não vaza
     s.salvar()
     print(f"{s.id}: {antes} -> {a.tipo}" + (f" · projeto {s.m['projeto']}" if a.projeto else ""))
+    if formato_antes and s.m.get("formato") is None:
+        print(f"  formato {formato_antes} não vale para {TIPOS.get(a.tipo, a.tipo)}: limpo")
+        if formato_antes == _sessao.FORMATO_DAILY:
+            print(f"  deixou de ser daily: a ata e o Raio-X saem com `atas.py processar {s.id} --forcar estrutura`")
     if _sessao.ler_json(s.caminho("ata.json")):
         pipeline.reaplicar(s)                    # tipo interno tira a página do ar
     if antes == _sessao.TIPO_PENDENTE:
@@ -372,21 +382,56 @@ def c_tipo(a):
 
 
 def c_formato(a):
-    """Corrige o formato da reunião (descoberta/demo/alinhamento; "nenhum" apaga). Só muda a
-    leitura do Raio-X em reunião de cliente: a faixa da fatia de fala e as perguntas abertas."""
+    """Corrige o formato da reunião, que vale por tipo (`sessao.FORMATOS`): cliente → descoberta/demo/
+    alinhamento (muda a leitura do Raio-X); parresia → daily (tira a reunião de TODA a medição);
+    "nenhum" apaga."""
     s = achar(a.id)
-    novo = None if a.formato in ("nenhum", "nao-sei", "não-sei") else a.formato
-    if novo is not None and novo not in _sessao.FORMATOS:
-        sys.exit(f"formato inválido: use {', '.join(_sessao.FORMATOS)} ou nenhum")
+    novo = None if a.formato in ("nenhum", "nao-sei", "não-sei", "reuniao", "reunião") else a.formato
+    if not _sessao.formato_valido(s.tipo, novo):
+        validos = _sessao.formatos_do_tipo(s.tipo)
+        sys.exit(f"formato inválido para {TIPOS.get(s.tipo, s.tipo)}: use "
+                 + (", ".join(validos) + " ou nenhum" if validos else "nenhum (este tipo não tem formato)"))
     antes = s.m.get("formato")
     s.m["formato"] = novo
     s.salvar()
     print(f"{s.id}: formato {antes or '—'} -> {novo or '—'}")
-    if s.tipo != "cliente":
-        print(f"  (a reunião é {TIPOS.get(s.tipo, s.tipo)}: o formato só pesa no Raio-X de cliente)")
+    if _sessao.fora_da_medicao(s):
+        if antes != novo:
+            _tirar_da_medicao(s)
+        return
+    if antes == _sessao.FORMATO_DAILY:
+        print(f"  deixou de ser daily: a ata e o Raio-X saem com `atas.py processar {s.id} --forcar estrutura`")
+        return
     if s.status_etapa("raio_x") == "ok" and not a.sem_raio_x:
         raio_x(s)
         print("  Raio-X refeito com o formato novo (atas.py fala <id> mostra a leitura)")
+
+
+def _tirar_da_medicao(s):
+    """A reunião virou daily depois de medida: tira a linha do histórico (com backup), refaz a nota do
+    vault e o painel, apaga a página/relatório dela em fala-analise/, guarda a avaliação interna como
+    *.antes-daily.* (não apaga) e marca raio_x e avaliacao como "pulada"."""
+    import analise_fala
+    import avaliar
+    import pipeline
+    r = analise_fala.remover_reuniao(s.id)
+    if r["linha"]:
+        print(f"  Raio-X: linha tirada do histórico (backup em {r['backup'].name})"
+              + (f"; {len(r['apagados'])} arquivo(s) da reunião apagado(s) em fala-analise/" if r["apagados"] else ""))
+        print("  nota do Sinapse refeita sem ela" if r["vault"] else "  (vault não encontrado nesta máquina)")
+    else:
+        print("  Raio-X: a reunião não estava no histórico")
+    for x in avaliar.tirar_da_medicao(s):
+        print(f"  avaliação interna guardada como {x.name}")
+    s = Sessao.abrir(s.pasta)
+    s.etapa("raio_x", "pulada", pipeline.FORA_DA_MEDICAO)
+    s.etapa("avaliacao", "pulada", pipeline.FORA_DA_MEDICAO)
+    at = _sessao.ler_json(s.caminho("ata.json")) or {}
+    if not _ata.e_daily(at):
+        print(f"  a ata ainda é a de reunião normal; a da daily (pessoas, com você, frentes): "
+              f"`atas.py processar {s.id} --forcar estrutura`"
+              + (" (com `transcricao,estrutura` refaz também quem falou, enquanto o áudio existir)"
+                 if (s.audio_dir / "loop.opus").exists() else ""))
 
 
 def c_marcar(a):
@@ -512,6 +557,10 @@ def raio_x(s, cfg=None, log=print):
     Usa o .pcm se ainda existir, senão o mic.opus guardado. Devolve o resultado de processar()."""
     import analise_fala
     import config as _config
+    import pipeline
+    if _sessao.fora_da_medicao(s):               # daily: nunca medida (a trava também está no analise_fala)
+        s.etapa("raio_x", "pulada", pipeline.FORA_DA_MEDICAO)
+        return None
     cfg = cfg or _config.carregar()
     segs, _ = _ata_de(s)
     if not segs:
@@ -549,6 +598,9 @@ def c_fala(a):
         raise SystemExit("informe a reunião (id ou ultima) ou use --recalcular")
     s = achar(a.id)
     r = raio_x(s)
+    if r is None:
+        print(f"{s.id}: daily — fora da medição (sem Raio-X da fala)")
+        return
     m = r["metrics"]
     print(f"Raio-X da Fala · {s.m.get('titulo')} · {m['dur_min']} min")
     if m.get("leitura"):
@@ -629,6 +681,9 @@ def c_fala_recalcular(a):
     if a.id:
         alvo = [s for s in alvo if a.id in s.id]
     for s in alvo:
+        if _sessao.fora_da_medicao(s):
+            print(f"\n{s.id}  daily: fora da medição (pulada)")
+            continue
         segs, _ = _ata_de(s)
         if not segs:
             continue
@@ -646,6 +701,36 @@ def c_fala_recalcular(a):
         for k, v in novo.items():
             print(f"  {k:<32} {str(velho_r.get(k, '—')):<34} → {v}")
     print(f"\nhistórico e páginas em: {saida} (o vault do Sinapse não foi tocado)")
+
+
+def c_daily(a):
+    """Busca só nas dailies: quem disse o quê sobre qual card. Do ata.json (pessoas, com você, decisões,
+    encaminhamentos) e, se a ata não tiver nada, da transcrição. Nome confirmado ou "Rótulo (nome?)"."""
+    import daily
+    achou = 0
+    for s in _sessao.listar():
+        if not _sessao.fora_da_medicao(s):
+            continue
+        quando = str(s.m.get("inicio") or s.m.get("criado") or "")
+        if a.desde and quando[:10] < a.desde:
+            continue
+        segs, at = _ata_de(s)
+        if at is None:
+            continue
+        if not _ata.e_daily(at):                 # daily com ata de reunião normal: só a transcrição
+            at = {**at, "pessoas": [], "com_voce": [],
+                  "frentes_rastreadas": daily.frentes_do_config(_config.carregar())}
+        hits = daily.buscar(at, segs, a.termo, a.pessoa, a.frente)
+        if not hits:
+            continue
+        print(f"{quando[:16].replace('T', ' ')} · {s.id}")
+        for h in hits[:a.n]:
+            card = f" · {h['card']}" if h.get("card") else ""
+            susp = " ⚠ origem não localizada" if h.get("verificado") is False else ""
+            print(f"  [{h.get('t')}] {h['quem']}{card} · {h['onde']}: {h['texto']}{susp}")
+        achou += len(hits)
+    if not achou:
+        print(f"nada sobre {a.termo!r} nas dailies" + (f" de {a.pessoa}" if a.pessoa else ""))
 
 
 def c_ao_vivo(a):
@@ -669,10 +754,21 @@ def c_calibrar(a):
     tmp = pathlib.Path(tempfile.mkdtemp()) / "loop.wav"
     audio.escrever_wav(tmp, audio.ler_audio(fonte))
     print(f"{s.id} · participantes informados: {s.participantes_remotos() or 'nenhum'}")
+    mx, fmin, smin = cfg.get("diar_max_falantes", 6), None, None
+    if a.daily or _sessao.fora_da_medicao(s):
+        # os parâmetros da daily são PALPITE até esta conta numa daily real (quantas pessoas falaram?)
+        d = {**_config.PADROES["daily_diar"], **(cfg.get("daily_diar") or {})}
+        mx, fmin, smin = d["max_falantes"], d["min_fatia"], d["min_segundos"]
+        print(f"  teto da daily: até {mx} vozes, grupo com ≥{fmin:.1%} da fala e ≥{smin:.0f} s")
     for thr in [float(x) for x in a.limiares.split(",")]:
-        r = transcribe._diarizar(tmp, thr, -1, cfg.get("diar_max_falantes", 6), cfg.get("diar_python"))
+        r = transcribe._diarizar(tmp, thr, -1, mx, cfg.get("diar_python"), fatia_min=fmin, min_seg=smin)
+        tempo = {}
+        for x in r.get("turnos") or []:
+            tempo[x["speaker"]] = tempo.get(x["speaker"], 0.0) + x["end"] - x["start"]
+        tot = sum(tempo.values()) or 1
+        fatias = " ".join(f"{v / tot:.0%}" for v in sorted(tempo.values(), reverse=True))
         print(f"  limiar {thr:.2f}: agrupamento bruto {r.get('brutos'):>3} → {r['falantes']} "
-              f"falante(s) ({r.get('modo')})")
+              f"falante(s) ({r.get('modo')}) · fatias {fatias}")
     tmp.unlink(missing_ok=True)
 
 
@@ -704,8 +800,8 @@ def _resumo_importada(s):
 def c_importar_celular(a):
     """Reunião presencial gravada no celular: um arquivo de áudio → uma sessão (ver celular.py)."""
     import celular
-    if a.formato and a.formato not in _sessao.FORMATOS:
-        sys.exit(f"formato inválido: use {', '.join(_sessao.FORMATOS)}")
+    if not _sessao.formato_valido(a.tipo or _sessao.TIPO_PENDENTE, a.formato):
+        sys.exit(f"formato inválido: use {', '.join(_sessao.formatos_do_tipo(a.tipo or _sessao.TIPO_PENDENTE))}")
     if a.tipo and a.tipo not in TIPOS:
         sys.exit(f"tipo inválido: use {', '.join(TIPOS)} (sem --tipo a reunião fica pendente)")
     part = [p.strip() for p in (a.participantes or "").split(",") if p.strip()]
@@ -967,7 +1063,7 @@ def main(argv=None):
     p.add_argument("tipo")
     p.add_argument("--projeto")
     p.set_defaults(fn=c_tipo)
-    p = sub.add_parser("formato", help="formato da reunião de cliente (Raio-X): descoberta, demo, alinhamento ou nenhum")
+    p = sub.add_parser("formato", help="formato da reunião: cliente → descoberta, demo, alinhamento; parresia → daily; ou nenhum")
     p.add_argument("id")
     p.add_argument("formato")
     p.add_argument("--sem-raio-x", action="store_true", help="não refazer o Raio-X agora")
@@ -999,7 +1095,15 @@ def main(argv=None):
     p = sub.add_parser("calibrar")
     p.add_argument("id")
     p.add_argument("--limiares", default="0.5,0.6,0.7,0.8,0.9,0.95")
+    p.add_argument("--daily", action="store_true", help="com o teto da daily (daily_diar no config)")
     p.set_defaults(fn=c_calibrar)
+    p = sub.add_parser("daily", help="busca só nas dailies: quem disse o quê sobre qual card")
+    p.add_argument("termo", help="palavra, assunto ou card (SUP-953)")
+    p.add_argument("--pessoa")
+    p.add_argument("--frente", help='uma das frentes_rastreadas do config, ex.: "Frota WP"')
+    p.add_argument("--desde", help="AAAA-MM-DD")
+    p.add_argument("-n", type=int, default=20, help="máximo de menções por daily")
+    p.set_defaults(fn=c_daily)
     sub.add_parser("importar-legado").set_defaults(fn=c_importar_legado)
     p = sub.add_parser("importar", help="reunião presencial gravada no celular (um arquivo de áudio)")
     p.add_argument("arquivo")
@@ -1007,7 +1111,7 @@ def main(argv=None):
     p.add_argument("--tipo", help="cliente, parresia, carreira ou pessoal; sem ele = pendente")
     p.add_argument("--projeto")
     p.add_argument("--participantes", help='quem mais estava na sala, sem você: "Ana,Breno"')
-    p.add_argument("--formato", help="descoberta, demo ou alinhamento (cliente)")
+    p.add_argument("--formato", help="descoberta, demo ou alinhamento (cliente); daily (parresia)")
     p.add_argument("--data", help='início da reunião, "AAAA-MM-DD HH:MM" (padrão: nome ou data do arquivo)')
     p.add_argument("--marcas", help='momentos marcados no áudio, mm:ss separados por vírgula: "12:30,40:10"')
     p.add_argument("--sem-processar", action="store_true", help="só cria a sessão")
