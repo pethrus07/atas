@@ -168,9 +168,28 @@ curto (passo 1e). Detalhe, números e limites em `ARQUITETURA.md` §21.
 - **Calibrar** na primeira daily de 1 h gravada de verdade, sabendo quantas pessoas falaram: `calibrar <id>
   --daily` (teto 1,5% / 15 s / 12 vozes), a janela da rodada (10 s) e a do card (±60 s) são palpite.
 - **Completar `daily_equipe`** no `config.json` (lista inicial de 11 nomes, com apelidos usados: "Lena"…).
-- **Decidir a 09/10** (`2026-10-09_0935_reuniao-metodo`): aplicar `formato daily`? Tira a linha dela do
-  Raio-X (com backup) e refaz a nota do vault; não foi aplicado.
+- ~~Decidir a 09/10~~ ✅ 19/10: o Pedro confirmou que era um trecho da daily; `formato daily` aplicado (linha
+  fora do Raio-X, backup `historico.jsonl.bak-2026-10-19`, avaliação guardada como `*.antes-daily.*`). A ata
+  ainda é a de reunião normal: `processar <id> --forcar transcricao,estrutura` refaz no formato daily.
 - A rodada não foi medida numa rodada de verdade (a 09/10 é a apresentação do método: 2 pistas, 1 em
   conflito com o nome deduzido pelo texto).
 - A diarização da daily roda na CPU: ~835 s para 46 min de áudio (09/10), ou seja ~18 min a mais numa daily de
   1 h antes da ata sair.
+
+## 22. Ao vivo intervencionista (pedido de 21/10/2026) · 💡 proposta, não feito
+Feedback do Pedro depois de usar o ao vivo numa reunião, com o Claude lendo `ao-vivo.md` pelo chat: "muito muito
+bom". O pedido: um modo **intervencionista**, que fica ouvindo o tempo todo e traz a resposta **sem ele pedir**.
+Esboço para discutir antes de construir:
+- **Gatilho determinístico primeiro, IA depois:** um passo sem IA olha as falas novas e só chama o Claude quando
+  algo pede ajuda: pergunta dirigida ao Pedro ("Pedro, quanto…?", "você sabe se…"), número/valor/prazo dito,
+  card (`SUP-xxx`) ou frente rastreada citada, afirmação sobre um projeto dele que dá para conferir. Sem gatilho,
+  nada é chamado (custo e ruído).
+- **O Claude responde com contexto:** memória, Sinapse, repos e atas anteriores do mesmo projeto (o mesmo
+  acesso do /ata), em no máximo 2 linhas, com a fonte; "não sei" vale mais que chute (regra 3: nada inventado).
+- **Entrega discreta:** um cartão pequeno sempre visível no canto (sem roubar foco nem tocar som), que some
+  sozinho; histórico das intervenções na pasta da sessão para o /ata conferir depois. Nunca fala, nunca escreve
+  em nada fora da máquina, nunca vai ao cliente.
+- **Limites a decidir:** teto de chamadas por reunião (cota do plano), atraso aceitável (o ao vivo usa modelo
+  pequeno na GPU a cada `ao_vivo_janela_s`), e se vale em daily/Parresia (onde quase nada é com ele) ou só em
+  cliente.
+
