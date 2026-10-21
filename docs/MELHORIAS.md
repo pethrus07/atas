@@ -189,7 +189,8 @@ Esboço para discutir antes de construir:
 - **Entrega discreta:** um cartão pequeno sempre visível no canto (sem roubar foco nem tocar som), que some
   sozinho; histórico das intervenções na pasta da sessão para o /ata conferir depois. Nunca fala, nunca escreve
   em nada fora da máquina, nunca vai ao cliente.
-- **Limites a decidir:** teto de chamadas por reunião (cota do plano), atraso aceitável (o ao vivo usa modelo
-  pequeno na GPU a cada `ao_vivo_janela_s`), e se vale em daily/Parresia (onde quase nada é com ele) ou só em
-  cliente.
+- **Decidido em 21/10:** **o Pedro liga quando quiser, reunião a reunião** (mesmo esquema do ao vivo), desligado
+  por padrão — não há regra por tipo.
+- **Limites a decidir:** teto de chamadas por reunião (cota do plano) e atraso aceitável (o ao vivo usa modelo
+  pequeno na GPU a cada `ao_vivo_janela_s`).
 
