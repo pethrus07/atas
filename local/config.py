@@ -24,6 +24,9 @@ PADROES = {
     "dispositivo": "auto",        # auto | cuda | cpu
     "vocabulario": True,
     "idioma": "pt",
+    # condition_on_previous_text do Whisper: desligado desde 22/10/2026 (MELHORIAS 10): ligado, um trecho
+    # "Palavra Por Palavra" vira prompt da janela seguinte e o defeito se arrasta por horas
+    "whisper_condicionar": False,
     # diarização
     "diarizar": True,
     "diar_threshold": 0.7,       # calibrado 30/09 (corpus sintético); recalibrar com áudio real: atas.py calibrar

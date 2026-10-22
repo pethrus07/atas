@@ -144,7 +144,7 @@ def test_vigiar_importa_so_o_novo_e_nao_duplica(raiz, tmp_path):
 # ── pipeline com o Whisper e a diarização substituídos ─────────────────────────
 @pytest.fixture
 def falsos(monkeypatch, tmp_path):
-    def passada(modelo, audio_, falante, hot=None, idioma="pt"):
+    def passada(modelo, audio_, falante, hot=None, idioma="pt", *_a, **_k):
         return [dict(x, speaker=falante) for x in segs_exemplo()]
     monkeypatch.setattr(transcribe, "carregar_modelo",
                         lambda *a, **k: (None, {"modelo": "falso", "dispositivo": "cpu"}))

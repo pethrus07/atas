@@ -251,9 +251,15 @@ def processar(s, cfg=None, log=print, forcar=(), estruturar=None, publicar_=None
             segs, info = r
             escrever_json(s.caminho("transcricao.json"), {"segments": segs, "info": info})
             if segs:
+                pic = info.get("picados") or []
+                ruins = [p for p in pic if p["baixa_confianca"]]
                 s.etapa("transcricao", "ok", f"{len(segs)} trechos · {info['modelo']} "
-                        f"({info['dispositivo']}) · {info['segundos_processamento']:.0f}s",
+                        f"({info['dispositivo']}) · {info['segundos_processamento']:.0f}s"
+                        + (f" · {len(pic)} trecho(s) \"Palavra Por Palavra\" refeito(s)" if pic else ""),
                         **{k: info[k] for k in ("modelo", "dispositivo") if k in info})
+                if ruins:                         # MELHORIAS 10: o que nem refazendo saiu normal
+                    s.avisar(f"transcrição de baixa confiança em {len(ruins)} trecho(s): "
+                             + ", ".join(f"{_ata.fmt_t(p['ini'])}–{_ata.fmt_t(p['fim'])}" for p in ruins[:5]))
             else:
                 s.etapa("transcricao", "falhou", "nenhuma fala reconhecida no áudio — o áudio "
                         "fica guardado; confira o microfone e a saída de som")

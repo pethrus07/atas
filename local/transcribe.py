@@ -156,8 +156,65 @@ def _recortar(palavras, falante):
     return out
 
 
-def _passada(modelo, audio, falante, hotwords=None, idioma="pt"):
-    kw = dict(language=idioma, vad_filter=True, beam_size=5, word_timestamps=True)
+_SR = 16000
+PICADO_MAIUSC = 0.7          # fala com mais de 70% das palavras em maiúscula = "Palavra Por Palavra"
+PICADO_MIN_PALAVRAS = 8
+PICADO_JUNTAR_S = 60.0       # regiões a menos disso viram uma só
+
+
+def _maiusculas(texto):
+    """(palavras fora do começo de frase, quantas começam com maiúscula)."""
+    import re
+    total = caps = 0
+    for frase in re.split(r"(?<=[.?!])\s+", texto):
+        ws = re.findall(r"[A-Za-zÀ-ÿ]+", frase)[1:]
+        total += len(ws)
+        caps += sum(1 for w in ws if w[0].isupper())
+    return total, caps
+
+
+PICADO_JANELA_S = 300.0      # o modo "legenda" mais brando: numa janela de 5 min com ≥ 60 palavras,
+PICADO_JANELA_MAIUSC = 0.30  # mais de 30% em maiúscula (medido em 05/10: modo 31–49%; normal 1–16%)
+PICADO_JANELA_MIN = 60
+
+
+def regioes_picadas(segs, juntar_ate_s=2.0):
+    """Regiões [(ini, fim)] em que o Whisper devolveu "Palavra Por Palavra" (MELHORIAS 10), juntando os
+    trechos como a ata junta (pausa < 2 s) e contando as palavras em maiúscula fora do começo de frase:
+      - a fala com ≥ 8 palavras e > 70% em maiúscula (a forma extrema: "Ele Ter Um Site Já Que…");
+      - a janela de 5 min com ≥ 60 palavras e > 30% em maiúscula (o modo "legenda", em que cada pedaço de
+        2–3 palavras vem com maiúscula: na reunião de 05/10, 31–49% por janela; transcrição normal, 1–16%).
+    Regiões a menos de 60 s uma da outra viram uma só."""
+    falas = []
+    for s in sorted(segs, key=lambda x: x["start"]):
+        if falas and s["start"] - falas[-1]["end"] <= juntar_ate_s:
+            falas[-1]["end"] = s["end"]
+            falas[-1]["text"] += " " + s["text"]
+        else:
+            falas.append({"start": s["start"], "end": s["end"], "text": s["text"]})
+    achadas, janelas = [], {}
+    for f in falas:
+        total, caps = _maiusculas(f["text"])
+        f["total"], f["caps"] = total, caps
+        if total >= PICADO_MIN_PALAVRAS and caps / total > PICADO_MAIUSC:
+            achadas.append([f["start"], f["end"]])
+        janelas.setdefault(int(f["start"] // PICADO_JANELA_S), []).append(f)
+    for _, fs in sorted(janelas.items()):
+        total, caps = sum(f["total"] for f in fs), sum(f["caps"] for f in fs)
+        if total >= PICADO_JANELA_MIN and caps / total > PICADO_JANELA_MAIUSC:
+            achadas.append([fs[0]["start"], fs[-1]["end"]])
+    regioes = []
+    for a, b in sorted(achadas):
+        if regioes and a - regioes[-1][1] <= PICADO_JUNTAR_S:
+            regioes[-1][1] = max(regioes[-1][1], b)
+        else:
+            regioes.append([a, b])
+    return [tuple(r) for r in regioes]
+
+
+def _transcrever(modelo, audio, falante, hotwords, idioma, condicionar):
+    kw = dict(language=idioma, vad_filter=True, beam_size=5, word_timestamps=True,
+              condition_on_previous_text=condicionar)
     if hotwords:
         kw["hotwords"] = ", ".join(hotwords)
     segmentos, _info = modelo.transcribe(audio, **kw)
@@ -168,6 +225,41 @@ def _passada(modelo, audio, falante, hotwords=None, idioma="pt"):
         elif s.text.strip():
             out.append({"speaker": falante, "start": round(s.start, 2),
                         "end": round(s.end, 2), "text": s.text.strip()})
+    return out
+
+
+def _passada(modelo, audio, falante, hotwords=None, idioma="pt", condicionar=False, relatorio=None):
+    """Uma passada num canal. `condicionar` = condition_on_previous_text do Whisper: DESLIGADO desde
+    22/10/2026 (MELHORIAS 10). Na reunião de 05/10 o canal da chamada entrou em "Palavra Por Palavra"
+    aos ~38 min e não saiu mais até o fim (3h09): o texto anterior, já picado, vai de prompt para a janela
+    seguinte e o defeito se arrasta. O mesmo trecho transcrito sozinho, com as mesmas hotwords, sai normal.
+    Rede de segurança: região que ainda saia picada é refeita sozinha (sem o texto anterior e sem hotwords)
+    e fica a melhor das duas; a que continuar picada sai com `baixa_confianca`. `relatorio` (lista)
+    recebe o que foi achado e refeito."""
+    out = _transcrever(modelo, audio, falante, hotwords, idioma, condicionar)
+    for ini, fim in regioes_picadas(out):
+        a, b = max(0, int((ini - 1.0) * _SR)), min(len(audio), int((fim + 1.0) * _SR))
+        antes = [s for s in out if ini - 1.0 <= s["start"] <= fim + 1.0]
+        novo = _transcrever(modelo, audio[a:b], falante, None, idioma, False)
+        for s in novo:
+            s["start"] = round(s["start"] + a / _SR, 2)
+            s["end"] = round(s["end"] + a / _SR, 2)
+        t0, c0 = _maiusculas(" ".join(s["text"] for s in antes))
+        t1, c1 = _maiusculas(" ".join(s["text"] for s in novo))
+        r0, r1 = (c0 / t0 if t0 else 1.0), (c1 / t1 if t1 else 1.0)
+        trocou = bool(novo) and r1 < r0
+        if trocou:
+            out = [s for s in out if not (ini - 1.0 <= s["start"] <= fim + 1.0)] + novo
+            out.sort(key=lambda s: s["start"])
+        ficou = novo if trocou else antes
+        ainda = min(r0, r1) > PICADO_MAIUSC
+        if ainda:
+            for s in ficou:
+                s["baixa_confianca"] = True
+        if relatorio is not None:
+            relatorio.append({"falante": falante, "ini": round(ini, 1), "fim": round(fim, 1),
+                              "maiusc_antes": round(r0, 2), "maiusc_depois": round(r1, 2),
+                              "refeito": trocou, "baixa_confianca": ainda})
     return out
 
 
@@ -283,7 +375,10 @@ def transcrever_celular(sessao, cfg, log=print):
     fonte = _audio.fonte_audio(sessao, "celular")
     x = _audio.ler_audio(fonte)
     log("  Transcrevendo o áudio do celular…")
-    segs = _passada(modelo, x, "Falante", hot, cfg.get("idioma", "pt"))
+    picados = []
+    segs = _passada(modelo, x, "Falante", hot, cfg.get("idioma", "pt"),
+                    bool(cfg.get("whisper_condicionar", False)), picados)
+    info["picados"] = picados
 
     n = len(remotos) + 1 if remotos else -1
     ref = celular.referencia(cfg)
@@ -372,14 +467,18 @@ def transcrever_sessao(sessao, cfg, log=print):
     fonte_mic = _audio.fonte_audio(sessao, "mic")
     fonte_loop = _audio.fonte_audio(sessao, "loop")
     segs_voce, segs_part = [], []
+    condicionar = bool(cfg.get("whisper_condicionar", False))     # MELHORIAS 10: desligado desde 22/10
+    picados = []
+    info["picados"] = picados
     if fonte_mic:
         log("  Transcrevendo você…")
         segs_voce = _passada(modelo, _audio.ler_audio(fonte_mic), "Você", hot,
-                             cfg.get("idioma", "pt"))
+                             cfg.get("idioma", "pt"), condicionar, picados)
     if fonte_loop:
         log("  Transcrevendo a chamada…")
         audio_loop = _audio.ler_audio(fonte_loop)
-        segs_part = _passada(modelo, audio_loop, "Participante", hot, cfg.get("idioma", "pt"))
+        segs_part = _passada(modelo, audio_loop, "Participante", hot, cfg.get("idioma", "pt"),
+                             condicionar, picados)
     else:
         audio_loop = None
 

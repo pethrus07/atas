@@ -195,6 +195,22 @@ intermediários e devolve um trecho para até 30 s de fala (medido: 4 falas → 
 mesmas 52 palavras). Por isso a transcrição pede `word_timestamps=True` e
 `transcribe._recortar()` refaz os trechos cortando em pausa ≥ 0,6 s ou fim de frase.
 
+**Sem condicionar no texto anterior** (22/10/2026, MELHORIAS 10). O Whisper roda com
+`condition_on_previous_text=False` (config `whisper_condicionar`, padrão `false`). Ligado, ele usa o texto já
+transcrito como prompt da janela seguinte; quando entra num modo ruim ("Palavra Por Palavra", pedaços de 1–3
+palavras, cada um com maiúscula), o modo se arrasta pelo resto do áudio. Medido no canal da chamada da reunião
+de 05/10 (cópia, 3h10), com as mesmas hotwords: produção 40% das palavras em maiúscula fora do começo de frase
+(modo a partir de ~0:38, pior em 1:45–1:55 com 71–89%); refeito com as configurações de produção, o modo
+voltou noutro ponto (2:15 até o fim, 31–43%), o que mostra que o início é aleatório e a persistência vem do
+condicionamento; sem condicionar, 2–14% em todas as janelas de 5 min, o mesmo número de palavras (14,7 mil ×
+15,0 mil) e 2,5× mais rápido (399 s × 1.002 s). O trecho 1:46–1:58 transcrito sozinho saiu normal com e sem
+hotwords: **hotword não é a causa**. Rede de segurança (`regioes_picadas`): fala com ≥ 8 palavras e > 70% em
+maiúscula, ou janela de 5 min com ≥ 60 palavras e > 30%, é refeita sozinha (sem texto anterior e sem
+hotwords) e fica a versão com menos maiúsculas; a que continuar picada sai com `baixa_confianca: true` no
+trecho e um aviso na sessão. O detector, rodado nas transcrições de outubro: 05/10 (143,7 min), 19/10 (2,6 min
+no fim da reunião de 4h47, mesmo modo) e 09/10 (0,3 min de "Alô, Alô, Alô…"); nenhum falso positivo nas
+re-transcrições limpas nem no canal do microfone de 05/10.
+
 ---
 
 ## 6 · Falantes: diarização e nomes
@@ -304,6 +320,7 @@ obrigatória para gravar.**
 | `dispositivo` | `auto` | `auto` · `cuda` · `cpu` |
 | `vocabulario` | `true` | hotwords de `vocabulario.json` + participantes |
 | `idioma` | `pt` | idioma do Whisper (os testes usam `en`) |
+| `whisper_condicionar` | `false` | `condition_on_previous_text` do Whisper; ligado, o "Palavra Por Palavra" se arrasta (§5, MELHORIAS 10) |
 | `diarizar` | `true` | liga a separação dos remotos |
 | `diar_threshold` | `0.7` | §6 |
 | `diar_max_falantes` | `6` | teto |
@@ -462,6 +479,8 @@ filtro sem IA acha algo, chama o Claude sozinha e mostra a resposta num cartão.
   para a conta errada. `eventos`, `minidrive`, `mesa-arton` e `bailado-da-sanfona` **não têm**
   `account_id` fixado.
 - **O turbo com vocabulário junta trechos** (§5). Não tire o `word_timestamps`.
+- **Não ligue o `condition_on_previous_text`** (`whisper_condicionar`): numa reunião longa o "Palavra Por
+  Palavra" começa num ponto aleatório e não sai mais (§5, medido em 22/10 na reunião de 05/10).
 - **Limiar de diarização sem teto fatia uma pessoa em dezenas** (§6). O teto e o número
   informado existem por isso.
 - **Microfone USB sem formato EXTENSIBLE derruba o `soundcard`** num `assert` seco. É o

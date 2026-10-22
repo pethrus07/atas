@@ -276,7 +276,7 @@ def test_transcricao_da_daily_diariza_com_parametros_proprios(raiz, monkeypatch)
     import audio as _audio
     import numpy as np
     monkeypatch.setattr(transcribe, "carregar_modelo", lambda *a, **k: (None, {"modelo": "falso", "dispositivo": "cpu"}))
-    monkeypatch.setattr(transcribe, "_passada", lambda m, a_, falante, hot=None, idioma="pt":
+    monkeypatch.setattr(transcribe, "_passada", lambda m, a_, falante, hot=None, idioma="pt", *_a, **_k:
                         [{"speaker": falante, "start": 1.0, "end": 3.0, "text": "oi gente bom dia"}])
     monkeypatch.setattr(_audio, "ler_audio", lambda p: np.zeros(16000, dtype="float32"))
     chamadas = []

@@ -17,7 +17,7 @@ Valter, sessão `2026-10-05_2303_alinhamento-valter`), conferida item a item con
 | 7 | Prazo relativo | ✅ "N dias", "N semanas", faixa "4 5 dias", por extenso | `ata._data_coerente` |
 | 8 | Lacunas demais | ✅ revisão de decisão não é mais lacuna automática | `ata.lacunas` |
 | 9 | Valores, escopo, resumo por tema | ✅ listas auditadas `valores` (V) e `escopo` (S) + `por_tema` | `ata.py`, `render.py` |
-| 10 | Trechos "Palavra Por Palavra" do turbo | ⏳ pendente (investigar) | — |
+| 10 | Trechos "Palavra Por Palavra" do turbo | ✅ 22/10 · causa medida: `condition_on_previous_text` (não as hotwords); Whisper sem condicionar + região picada refeita ou marcada `baixa_confianca` | `transcribe._passada/regioes_picadas`, `ARQUITETURA.md` §5, `tests/test_transcricao_picada.py` |
 | 11 | Raio-X grava no Sinapse sem perguntar | ✅ documentado como a única exceção (regra 7 do /ata) | skill |
 | 12 | Tema escuro RYZE em tudo (ata, entregável, Raio-X, avaliação) | ✅ v2.2 | `tema.py` |
 | 13 | Raio-X com postura, frases para revisar e página por reunião | ✅ v2.2 | `analise_fala.postura`, `raio_x_html.py` |
@@ -117,6 +117,23 @@ lacuna por padrão; só o prazo de encaminhamento com dono.
 Entre 1:47:28 e 1:57:00 (o Valter compartilhando tela e mexendo em loja) o turbo devolveu falas
 com cada palavra em maiúscula e quebrada ("Ele Ter Um Site Já Que Descreve…"). Investigar se é o
 vocabulário (hotwords) num trecho de áudio ruim, e marcar trecho de baixa confiança.
+**✅ 22/10/2026 — medido numa cópia da sessão (a original conferida por hash, intacta).** A hipótese das
+hotwords **não** se confirmou; a causa é o `condition_on_previous_text` do Whisper.
+- O defeito não era só de 1:47 a 1:57: no canal da chamada, a fração de palavras em maiúscula fora do começo de
+  frase sobe a partir de ~0:38 e fica em 33–49% até o fim (3h09), com o pior em 1:45–1:55 (71–89%, 1 palavra por
+  trecho). O canal do microfone, na mesma reunião, ficou normal.
+- O trecho 1:46:20–1:58:00 transcrito **sozinho**, com e sem hotwords, com e sem condicionar: 0–11% em todos os
+  4 casos, e mais palavras que a produção (1.460–1.782 × 1.252). Sozinho, ele não reproduz.
+- Do 0:35 ao 1:58 com as configurações de produção: 3%. O arquivo **inteiro** com as configurações de produção:
+  o modo voltou, mas noutro ponto (2:15 até o fim, 31–43%). Sem condicionar, mesmas hotwords: 2–14% em todas as
+  janelas, 14,7 mil palavras (produção 14,5 mil) e 399 s × 1.002 s de GPU.
+- Conclusão: o modo começa num ponto aleatório e o texto anterior, usado como prompt, o carrega até o fim.
+**Feito:** `whisper_condicionar: false` por padrão (config) e rede de segurança `regioes_picadas` (fala > 70% em
+maiúscula ou janela de 5 min > 30%) → refaz a região sozinha sem hotwords e fica a melhor; se continuar picada,
+`baixa_confianca` no trecho e aviso na sessão; o detalhe da etapa de transcrição diz quantos trechos foram
+refeitos. Nas transcrições de outubro o detector achou 05/10, 19/10 (2,6 min no fim de 4h47) e 09/10 (0,3 min de
+"Alô, Alô…"). **Não feito:** retranscrever as reuniões antigas (só com o Pedro pedindo; a de 05/10 tem áudio até
+04/11: `processar <id> --forcar transcricao,estrutura` refaz a ata inteira).
 
 ### 11. A etapa `raio_x` grava no Sinapse sem perguntar
 É de propósito (nota auto, sem título), mas contradiz a regra do /ata "nada no Sinapse sem OK".
