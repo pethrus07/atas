@@ -96,7 +96,7 @@ atas/
 │   ├── wrangler.toml          conta FIXADA, D1, cron, ambiente homolog
 │   ├── package.json + test/   só para os testes (Miniflare); o deploy não tem build
 ├── claude/skills/ata/         a skill /ata (junction em ~/.claude/skills/ata)
-├── tests/                     pytest: 157 testes (6 lentos: fumaça, gravação, celular e atalho reais, -m lento)
+├── tests/                     pytest: 211 testes (6 lentos: fumaça, gravação, celular e atalho reais, -m lento)
 ├── atas-salvas/               FORA DO GIT — uma pasta por reunião (§8)
 ├── fala-analise/              FORA DO GIT — histórico e painel do Raio-X
 └── docs/                      este arquivo + BRIEFING-V2.md
@@ -464,7 +464,7 @@ filtro sem IA acha algo, chama o Claude sozinha e mostra a resposta num cartão.
 | /ata, índice (`buscar`), log de decisões | **prontos** | `claude/skills/ata`, `atas.py` |
 | Raio-X sem título no Sinapse | **pronto**; nota regravada | `analise_fala.py` |
 | 27 atas antigas | **importadas** como sessões `legado`, tipo/projeto **inferidos**; sem áudio; ainda não estruturadas | `legado.py` |
-| Testes | 108 em Python em 14/10 (4 lentos, 2 com os dispositivos reais) + 10 no Worker | `tests/`, `worker/test/` |
+| Testes | 211 em Python em 22/10 (6 lentos) + 10 no Worker | `tests/`, `worker/test/` |
 | Ao vivo | MVP pronto, **não testado numa reunião real** | `ao_vivo.py` |
 | Domínio próprio | adiado | README da v1 / memória |
 

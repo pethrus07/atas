@@ -170,7 +170,7 @@ Todos os comandos: `atas.py --help` e [docs/ARQUITETURA.md §11](docs/ARQUITETUR
 
 ## Testes
 ```powershell
-C:\Users\olive\.venvs\faster-whisper\Scripts\python.exe -m pytest tests -q   # 157 testes (151 rápidos + 6 lentos, -m "not lento" pula), ~70 s
+C:\Users\olive\.venvs\faster-whisper\Scripts\python.exe -m pytest tests -q   # 211 testes (205 rápidos + 6 lentos, -m "not lento" pula), ~50 s
 cd worker; npm test                                                          # 10 testes do Worker (Miniflare)
 ```
 
