@@ -280,7 +280,7 @@ que a auditoria não confere — só entram quando todos os falantes relevantes 
 | `atas-salvas/<id>/ao-vivo.md` | transcrição preliminar, se ligada | sempre (local) | não |
 | `atas-salvas/<id>/intervencoes.jsonl` | intervencionista: gatilho, trecho, resposta, fonte, custo (§22) | sempre (local) | não |
 | D1 `reunioes` (Worker) | **só cliente**: HTML do entregável, hash da senha, expiração | **`publicacao_reter_dias` = 90** (cron diário) | não |
-| D1 — linhas da v1 | segments + resumo das atas antigas (26 das 27 têm link no backup .md) | **sem prazo** até alguém decidir (§14) | não |
+| D1 — linhas da v1 | **apagadas em 22/10/2026** (26 despublicadas + 2 órfãs); backup local em `atas-salvas/_backup-d1-atas-2026-10-22.sql` | — | não |
 | `fala-analise/` | histórico e painel do Raio-X (com títulos) | sempre (local) | não |
 | `sinapse/08-CRESCIMENTO/fala-raio-x.md` | métricas por **data + tipo**, sem título | sobrescrita a cada reunião | outro repo |
 
@@ -407,7 +407,8 @@ npx wrangler deploy --env homolog            # → atas-homolog.desbravando-utv.
 versão no ar) → `npx wrangler d1 migrations apply atas --remote` → `npx wrangler deploy` →
 abrir uma ata antiga em `/r/<id>` e uma nova.
 
-**Proteger/expirar as atas da v1 que estão no ar** (depois do deploy da v2). `legado-proteger`
+**Proteger/expirar as atas da v1** — **sem alvo desde 22/10/2026**: as 28 linhas do D1 foram tiradas do ar
+(o Worker está vazio, §14). O comando fica documentado para referência: `legado-proteger`
 mostra o plano — apagar as internas (hoje 4: Parresia e pessoal); senha nova + 90 dias para as
 de cliente (22) — e só executa com `--aplicar`. As senhas novas ficam no `sessao.json` de cada uma.
 
@@ -442,7 +443,7 @@ filtro sem IA acha algo, chama o Claude sozinha e mostra a resposta num cartão.
 | Diarização com teto e nº informado | **pronta**; limiar **calibrado só em sintético** | §6, `atas.py calibrar` |
 | Ata estruturada pelo Claude + auditoria | **pronta**, testada numa reunião real de 66 min | `estruturar.py`, `ata.py` |
 | Render local, PDF sem upload, marca por tipo | **pronto** | `render.py` |
-| Worker v2 (senha, expiração, exclusão, idempotência) | **pronto e testado localmente (10 testes)**; **não publicado** (§14) | `worker/` |
+| Worker v2 (senha, expiração, exclusão, idempotência) | **no ar desde 22/10/2026** (versão `e80b6b7d…`, ryzecode08) e **vazio**: publicação não é usada, por decisão do Pedro (§14) | `worker/` |
 | /ata, índice (`buscar`), log de decisões | **prontos** | `claude/skills/ata`, `atas.py` |
 | Raio-X sem título no Sinapse | **pronto**; nota regravada | `analise_fala.py` |
 | 27 atas antigas | **importadas** como sessões `legado`, tipo/projeto **inferidos**; sem áudio; ainda não estruturadas | `legado.py` |
@@ -480,8 +481,13 @@ filtro sem IA acha algo, chama o Claude sozinha e mostra a resposta num cartão.
 - **`diarize.py` não roda no venv principal** (`import sherpa_onnx` falha).
 - **O `soundcard` preenche silêncio do loopback com zeros** medindo o tempo; a linha do tempo
   só escorrega se o dispositivo cair — e aí `Canal._preencher_lacuna()` compensa.
-- **As 27 atas da v1 continuam no D1 sem senha e sem prazo** (quem tem o link lê), inclusive a
-  de 22/09 da Parresia (frota). Decidir: proteger com senha, expirar ou apagar.
+- ~~As 27 atas da v1 continuam no D1 sem senha e sem prazo~~ **Resolvido em 22/10/2026.** O Worker v2
+  foi para produção às 17:10 UTC (versão `e80b6b7d…`, conta ryzecode08; migrações 0001, no-op, e 0002 no
+  D1 `atas`; backup do D1 antes, com 28 atas, em `atas-salvas/_backup-d1-atas-2026-10-22.sql`). No mesmo
+  dia o Pedro decidiu não publicar ata nenhuma ("não vejo motivo para esse de publicar atas") e pediu para
+  tirar tudo do ar: `atas.py despublicar` nas 26 da v1 (`publicacao.apagada_em` em cada `sessao.json`) e
+  DELETE das 2 linhas órfãs de julho sem sessão local. Conferido: `GET /api/atas` = 0, `/r/<id>` = 404.
+  **O Worker está no ar e vazio; publicar não é o fluxo atual**; as 3 atas `pendente` ficam locais.
 - **O vault guarda os títulos antigos no histórico do git.** A nota nova não tem títulos, mas
   os commits anteriores do `sinapse` têm. Reescrever histórico é decisão do Pedro.
 - **Tk sem DPI fica borrado** na tela do XPS; `app._dpi_nitido()` e `_p()` (espaço escalado)

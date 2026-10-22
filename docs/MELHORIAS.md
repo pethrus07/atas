@@ -30,7 +30,7 @@ Valter, sessão `2026-10-05_2303_alinhamento-valter`), conferida item a item con
 | 20 | Marcar momento (ideia do Granola): Ctrl+Alt+M global ou botão durante a gravação → `marcas` no sessao.json; o Claude prioriza o trecho (45 s antes, 15 s depois); seção "Momentos marcados" auditada no topo da ata interna, fora do entregável; `marcar`/`marcas` no CLI, `importar --marcas` | ✅ 14/10 · ⏳ falta a primeira reunião real marcada ao vivo | `marcas.py`, `atalho.py`, `app.py::_ligar_atalho`, `ARQUITETURA.md` §20, `tests/test_marcas.py` |
 | 21 | Daily da Parresia: `formato daily` (formato por tipo), fora de toda medição com trava no ponto de escrita; ata `atas/daily@1` (com você, frentes rastreadas, por pessoa, card conferido a ±60 s, menção não tratada); quem falou sem digitar nomes (teto próprio + rodada); "Gravar a próxima daily"; `atas.py daily` | ✅ 19/10 · ⏳ não calibrado: falta a primeira daily de 1 h gravada de verdade | `daily.py`, `sessao.fora_da_medicao`, `ARQUITETURA.md` §21, `tests/test_daily.py` |
 | 22 | Ao vivo intervencionista: liga reunião a reunião (Mais opções, só com GPU; liga o ao vivo junto; liga/desliga no meio); filtro sem IA (pergunta para ele, card/frente, valor/prazo, projeto; daily só os dois primeiros); Claude só leitura, 2 linhas com fonte ou "não sei"; teto 20 e 45 s, uma por vez; cartão sem foco no canto; `intervencoes.jsonl` | ✅ 22/10 · ⏳ falta a primeira reunião real com ele ligado | `intervencionista.py`, `app.py::_ligar_interv`, `ARQUITETURA.md` §22, `tests/test_intervencionista.py` |
-| — | Worker v2 no ar (sem ele, nenhuma ata é publicada; a de 05/10 está parada) | ⏳ o login do wrangler virou a conta pessoal | `worker/` |
+| — | Worker v2 no ar | ✅ 22/10/2026 17:10 UTC (`e80b6b7d…`, ryzecode08) · **vazio**: o Pedro decidiu não publicar ("não vejo motivo para esse de publicar atas") e tirou tudo do ar (26 da v1 despublicadas + 2 órfãs apagadas; backup do D1 em `atas-salvas/_backup-d1-atas-2026-10-22.sql`). As 3 atas `pendente` ficam locais; `legado-proteger` sem alvo | `worker/`, `ARQUITETURA.md` §14 |
 | — | Marcar trechos fora de pauta | ⏳ parcial: o prompt tira de resumo e itens; falta marcar na transcrição interna | — |
 
 Medido na reunião de 05/10 com a v2.1: ritmo **193 pal/min** (meta 130–180), muletas
@@ -123,7 +123,7 @@ vocabulário (hotwords) num trecho de áudio ruim, e marcar trecho de baixa conf
 Deixar escrito na skill que a nota `fala-raio-x.md` é a **única** exceção.
 
 ## Já anotados em outros lugares
-- Worker v2 não deployado (login do wrangler trocado): `ARQUITETURA.md` §14.
+- ~~Worker v2 não deployado~~ → no ar desde 22/10/2026 e vazio; publicação não é usada (decisão do Pedro): `ARQUITETURA.md` §14.
 - Ao vivo nunca testado em reunião real: `ARQUITETURA.md` §13.
 
 ## 15. Raio-X calibrado (14/10/2026) · ✅

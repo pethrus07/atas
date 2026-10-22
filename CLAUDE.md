@@ -2,7 +2,8 @@
 
 Gravador de reunião do Pedro: grava no disco enquanto a reunião acontece, transcreve local
 (faster-whisper na GPU), separa falantes e o Claude monta uma ata estruturada e auditada
-(`ata.json`). Só reunião de **cliente** sai da máquina (PDF RYZE e página com senha no Worker).
+(`ata.json`). Só reunião de **cliente** poderia sair da máquina (PDF RYZE e página com senha no
+Worker), mas desde 22/10/2026 a publicação não é usada: tudo fica local (ver "Estado").
 
 ## Onde está a arquitetura
 
@@ -41,10 +42,17 @@ não no principal (§5 e §14).
 
 ## Estado que muda o que você faz
 
-- **Worker v2 não está no ar** (registrado em `docs/MELHORIAS.md:26` e `:119`; testado só local):
-  o login padrão do wrangler desta máquina é a conta pessoal (`docs/ARQUITETURA.md` §14). O
-  `wrangler.toml` tem `account_id` fixo, então deploy com o login errado falha. Antes de afirmar
-  que algo foi publicado, conferir com `npx wrangler deployments list` (§11, linha 371).
+- **Worker v2 no ar e VAZIO; publicação não é usada** (decisão do Pedro, 22/10/2026: "não vejo
+  motivo para esse de publicar atas"; tudo fica só na máquina). Deploy em 22/10 às 17:10 UTC (versão
+  `e80b6b7d…`, conta ryzecode08), migrações 0001 (no-op) e 0002 aplicadas no D1 `atas`; backup do D1
+  antes (28 atas) em `atas-salvas/_backup-d1-atas-2026-10-22.sql`. No mesmo dia, a pedido dele, tudo
+  saiu do ar: `despublicar` nas 26 da v1 (`publicacao.apagada_em` no `sessao.json` de cada uma) e
+  DELETE das 2 linhas órfãs de julho sem sessão local. Conferido: `GET /api/atas` = 0 e `/r/<id>` = 404.
+  As 3 atas com publicação `pendente` **ficam locais**: não ofereça publicar. `legado-proteger` não
+  tem mais alvo. O código de publicação continua lá, sem uso.
+- Login padrão do wrangler desta máquina = conta pessoal (`docs/ARQUITETURA.md` §14); o
+  `wrangler.toml` tem `account_id` fixo, então deploy com o login errado falha. Antes de afirmar algo
+  sobre o que está no ar, conferir com `npx wrangler deployments list` e `GET /api/atas`.
 - Deploy em produção, na ordem de `docs/ARQUITETURA.md:371`: `npm test` →
   `npx wrangler deployments list` → `npx wrangler d1 migrations apply atas --remote` →
   `npx wrangler deploy`. Só com o OK do Pedro.

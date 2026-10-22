@@ -30,7 +30,8 @@ sai como PDF com a marca RYZE e, **quando você manda**, como página com senha 
 3. **Gravar.** A tela mostra o tempo, o nível de cada lado e o microfone em uso (o do fone,
    se ele estiver plugado). Só aparece aviso se houver problema.
 4. **Parar e gerar a ata.** Em reunião de cliente, **Publicar para o cliente** sobe a página
-   com senha — só se você mandar.
+   com senha — só se você mandar. **Desde 22/10/2026 a publicação não é usada** (decisão sua): as atas
+   ficam só na máquina e o Worker está vazio.
 5. No Claude: **`/ata`** — confirma quem é quem, fecha lacunas e recebe as propostas de
    memória, Sinapse, log de decisões e ClickUp (nada é publicado sem o seu sim).
 
