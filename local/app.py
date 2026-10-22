@@ -54,6 +54,10 @@ ROTULO_ETAPA = {"transcricao": "Transcrição", "falantes": "Quem falou", "estru
 ESCALA = 1.0     # definida ao abrir a janela: 1.0 = tela a 100%
 
 
+
+# Nome do produto na tela (22/10/2026). Repo, pasta e o comando /ata continuam "atas".
+NOME = "Ágora"
+
 def _p(n):
     """Pixels de desenho → pixels da tela. Sem escalar, 28 px numa tela a 250% viram nada."""
     return int(round(n * ESCALA))
@@ -117,7 +121,11 @@ class App(tk.Tk):
         global ESCALA
         ESCALA = self.winfo_fpixels("1i") / 96.0
         self.cfg = _config.carregar()
-        self.title("Atas")
+        self.title(NOME)
+        try:   # ícone próprio (22/10/2026); sem o arquivo, fica o padrão do Tk
+            self.iconbitmap(str(pathlib.Path(__file__).resolve().parent.parent / "assets" / "atas.ico"))
+        except tk.TclError:
+            pass
         self.geometry(f"{_p(440)}x{_p(540)}")
         self.minsize(_p(400), _p(480))
         self.configure(padx=_p(32), pady=_p(28))
@@ -169,7 +177,7 @@ class App(tk.Tk):
     def _erro_tk(self, exc, val, tb):
         _log("".join(traceback.format_exception(exc, val, tb)))
         _console(True)
-        messagebox.showerror("Atas — erro", f"{val}\n\nDetalhes em {LOG}")
+        messagebox.showerror(NOME + " — erro", f"{val}\n\nDetalhes em {LOG}")
 
     def _drenar(self):
         try:
@@ -181,19 +189,17 @@ class App(tk.Tk):
 
     def _fechar(self):
         if self.gt is not None:
-            if messagebox.askyesno("Atas", "Parar o treino e ver o retorno?"):
+            if messagebox.askyesno(NOME, "Parar o treino e ver o retorno?"):
                 self.treino_parar()
             return
-        if self.analisando_treino and not messagebox.askyesno(
-                "Atas", "O treino ainda está sendo analisado. Fechar mesmo assim?"):
+        if self.analisando_treino and not messagebox.askyesno(NOME, "O treino ainda está sendo analisado. Fechar mesmo assim?"):
             return
         if self.g is not None:
-            if messagebox.askyesno("Atas", "Parar a gravação e gerar a ata?\n\n"
+            if messagebox.askyesno(NOME, "Parar a gravação e gerar a ata?\n\n"
                                    "(O áudio até aqui já está salvo.)"):
                 self.parar()
             return
-        if self.processando and not messagebox.askyesno(
-                "Atas", "A ata ainda está sendo gerada. Fechar mesmo assim?\n\n"
+        if self.processando and not messagebox.askyesno(NOME, "A ata ainda está sendo gerada. Fechar mesmo assim?\n\n"
                 "Nada se perde: na próxima abertura o Atas oferece terminar."):
             return
         self.destroy()
@@ -240,7 +246,7 @@ class App(tk.Tk):
     # ── 1 · nova reunião ───────────────────────────────────────────────────
     def inicio(self):
         f = self._limpar()
-        self.title("Atas")
+        self.title(NOME)
         pend = [x for x in _sessao.a_retomar() if x.id not in self.dispensadas]
         if pend:
             o = pend[-1]
@@ -410,7 +416,7 @@ class App(tk.Tk):
             except Exception as e:
                 msg = str(e)
                 _log(traceback.format_exc())
-                self.q.put(lambda: (messagebox.showerror("Atas", f"Não consegui abrir o áudio:\n{msg}"),
+                self.q.put(lambda: (messagebox.showerror(NOME, f"Não consegui abrir o áudio:\n{msg}"),
                                     self.inicio()))
         threading.Thread(target=preparar, daemon=True).start()
 
@@ -590,12 +596,12 @@ class App(tk.Tk):
         vivos = [c for c in self.g.canais.values() if c.is_alive() and not c.morto]
         if not vivos:
             self.l_rec.configure(text="✕ NÃO ESTÁ GRAVANDO")
-            self.title("✕ Não está gravando — Atas")
+            self.title("✕ Não está gravando — Ágora")
         else:
             # a janela fica atrás do Meet: o título (barra de tarefas) confirma a marca sem roubar foco
             n = len(self.s.m.get("marcas") or [])
             self.title(f"● {_fmt_tempo(dec)}" + (f" · {n} marcado{'s' if n != 1 else ''}" if n else "")
-                       + " — Atas")
+                       + " — Ágora")
         self.l_tempo.configure(text=_fmt_tempo(dec))
         for k, b in self.barras.items():
             b["value"] = _nivel_pct(self.g.niveis().get(k, 0))
@@ -641,7 +647,7 @@ class App(tk.Tk):
         self.s = s
         self.processando = True
         f = self._limpar()
-        self.title("Gerando a ata — Atas")
+        self.title("Gerando a ata — Ágora")
         ttk.Label(f, text="Gerando a ata", style="T.TLabel").pack(anchor="w")
         ttk.Label(f, text=f"{s.m.get('titulo')} · {round(s.duracao_s() / 60)} min",
                   style="Sub.TLabel", wraplength=_p(370)).pack(anchor="w", pady=(0, _p(20)))
@@ -735,7 +741,7 @@ class App(tk.Tk):
         etapas = s.m.get("etapas") or {}
         falhas = [(k, v) for k, v in etapas.items() if v.get("status") == "falhou"]
         f = self._limpar()
-        self.title("Pronto — Atas")
+        self.title("Pronto — Ágora")
         ttk.Label(f, text="Ata pronta" if not falhas else "Ata com problema",
                   style="T.TLabel").pack(anchor="w")
         ttk.Label(f, text=s.m.get("titulo"), style="Sub.TLabel", wraplength=_p(370)).pack(
@@ -765,7 +771,7 @@ class App(tk.Tk):
                 try:
                     pipeline.publicar(Sessao.abrir(s.pasta), self.cfg)
                 except Exception as e:
-                    messagebox.showerror("Atas", f"Não publicou: {e}")
+                    messagebox.showerror(NOME, f"Não publicou: {e}")
                 self.pronto(s)
             ttk.Button(rod, text="Publicar para o cliente", command=publicar).pack(
                 fill="x", pady=(0, _p(8)))
@@ -805,7 +811,7 @@ class App(tk.Tk):
     def treino_inicio(self):
         import treino as _tr
         f = self._limpar()
-        self.title("Treino — Atas")
+        self.title("Treino — Ágora")
         cab = ttk.Frame(f)
         cab.pack(fill="x")
         ttk.Label(cab, text="Treino", style="T.TLabel").pack(side="left")
@@ -907,7 +913,7 @@ class App(tk.Tk):
             except Exception as e:
                 msg = str(e)
                 _log(traceback.format_exc())
-                self.q.put(lambda: (messagebox.showerror("Atas", f"Não consegui abrir o microfone:\n{msg}"),
+                self.q.put(lambda: (messagebox.showerror(NOME, f"Não consegui abrir o microfone:\n{msg}"),
                                     self.treino_inicio()))
         threading.Thread(target=preparar, daemon=True).start()
 
@@ -996,7 +1002,7 @@ class App(tk.Tk):
         t = self.t
         self.analisando_treino = True
         f = self._limpar()
-        self.title("Analisando o treino — Atas")
+        self.title("Analisando o treino — Ágora")
         ttk.Label(f, text="Analisando o treino", style="T.TLabel").pack(anchor="w")
         ttk.Label(f, text=f"{_tr._mmss(t.duracao_s())} gravados", style="Sub.TLabel").pack(anchor="w", pady=(0, _p(20)))
         self.l_tmsg = ttk.Label(f, text="Começando…", style="Sub.TLabel", wraplength=_p(370))
@@ -1031,7 +1037,7 @@ class App(tk.Tk):
         r = t.m.get("resultado") or {}
         m = r.get("metrics") or {}
         f = self._limpar()
-        self.title("Seu treino — Atas")
+        self.title("Seu treino — Ágora")
         self.geometry(f"{self.winfo_width()}x{max(self.winfo_height(), _p(660))}")
         ttk.Label(f, text="Seu treino", style="T.TLabel").pack(anchor="w")
         sub = _tr.TIPOS_TREINO.get(t.tipo_treino, "") + (f" · {t.m['assunto']}" if t.m.get("assunto") else "")
@@ -1079,13 +1085,13 @@ class App(tk.Tk):
                     try:
                         wav = _tr.trecho_wav(t, tc["ini"], tc["fim"])
                         if wav is None:
-                            self.q.put(lambda: messagebox.showinfo("Atas", "O áudio deste treino já foi apagado."))
+                            self.q.put(lambda: messagebox.showinfo(NOME, "O áudio deste treino já foi apagado."))
                             return
                         import winsound
                         winsound.PlaySound(str(wav), winsound.SND_FILENAME | winsound.SND_ASYNC)
                     except Exception as e:
                         _log(traceback.format_exc())
-                        self.q.put(lambda: messagebox.showerror("Atas", f"Não consegui tocar o trecho: {e}"))
+                        self.q.put(lambda: messagebox.showerror(NOME, f"Não consegui tocar o trecho: {e}"))
                 threading.Thread(target=tocar, daemon=True).start()
             self._link(links, f"Ouvir o trecho mais rápido ({_tr._mmss(tc['ini'])})", ouvir).pack(side="left")
 

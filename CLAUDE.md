@@ -1,4 +1,7 @@
-# CLAUDE.md — atas
+# CLAUDE.md — atas (produto: **Ágora**)
+
+O nome visível é **Ágora** desde 22/10/2026 (janela, atalho, docs); repo/pasta `atas`, `atas.py` e a
+skill `/ata` continuam com o nome antigo de propósito — não renomear.
 
 Gravador de reunião do Pedro: grava no disco enquanto a reunião acontece, transcreve local
 (faster-whisper na GPU), separa falantes e o Claude monta uma ata estruturada e auditada

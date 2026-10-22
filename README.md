@@ -1,4 +1,8 @@
-# Atas — o registro oficial de toda reunião importante
+# Ágora — o registro oficial de toda reunião importante
+
+> **Nome:** desde 22/10/2026 o produto se chama **Ágora** (a praça grega onde se reunia e se debatia;
+> família com Hermes e Sinapse). O repositório, a pasta `atas/`, os comandos (`atas.py`) e a skill
+> `/ata` continuam com o nome antigo de propósito: a ágora é o lugar, a ata é o documento que sai dela.
 
 Grava a reunião (Meet, Zoom, WhatsApp, ligação) **direto no disco enquanto ela acontece**,
 transcreve **nesta máquina** (faster-whisper na GPU), separa quem falou, e o Claude monta
