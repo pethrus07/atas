@@ -124,12 +124,21 @@ Uma conversa sem chamada não passa pelo PC. Grave no celular e traga o arquivo:
 
 ## Modo treino (ensaiar sozinho)
 1. Na janela, **Treinar** (no canto do "Nova reunião"). Escolha **Reunião** (ensaiar abertura,
-   proposta, objeção, próximos passos) ou **Explicar um tema** (estudo), o assunto e a duração
+   proposta, objeção, próximos passos), **Explicar um tema** (estudo) ou **Ler em voz alta**, o assunto e a duração
    (2 a 5 min). Em "Mais opções": o alvo de ritmo e a nota do Sinapse para conferir o conteúdo.
 2. **Começar**, fale, **Parar e ver o retorno**. Grava só o microfone.
 3. A tela mostra 4 números com leitura (ritmo, pausas, muletas, entonação) contra o alvo, o último
    treino e as suas reuniões, e o retorno do Claude: **1 coisa para manter e 1 para mudar**.
    "Ouvir o trecho mais rápido" toca os 10 s mais corridos; "Ver tudo" abre a página completa.
+
+**Ler em voz alta** (o terceiro tipo) é o exercício de pausa: a tela mostra um texto curto com uma barra
+a cada 5 a 8 palavras, e você para de verdade em cada barra. O texto vem da nota escolhida em "Mais
+opções" (a prosa de uma nota de `02-ESTUDO`) ou de três textos embutidos, em rodízio. O alvo de ritmo
+vira 4,5 sílabas/s e a duração-alvo é o tempo do texto nesse ritmo. No resultado, **Pausa nas barras**
+("pausou em 11 de 13") entra no lugar das muletas; não há retorno do Claude (não há conteúdo a conferir).
+
+Com GPU, a tela **Treinando** mostra uma linha discreta **ritmo agora 5,3 sílabas/s** (os últimos ~20 s,
+a cada 5 s), em vermelho só acima do alvo. É indicador; o número do resultado é o do áudio inteiro.
 
 Treino **nunca** entra no Raio-X das reuniões, no Sinapse nem em nada que sai da máquina.
 ```powershell

@@ -818,23 +818,30 @@ class App(tk.Tk):
         linha = ttk.Frame(f)
         linha.pack(fill="x", pady=(_p(6), _p(20)))
         for k, rot in _tr.TIPOS_TREINO.items():
-            ttk.Radiobutton(linha, text=rot, value=k, variable=self.v_ttipo).pack(side="left", padx=(0, _p(14)))
+            ttk.Radiobutton(linha, text=rot, value=k, variable=self.v_ttipo,
+                            command=lambda: self._ttipo_mudou()).pack(side="left", padx=(0, _p(12)))
+        tipo_linha = linha
 
-        linha = ttk.Frame(f)
+        # assunto e duração somem no "Ler em voz alta": o texto decide os dois
+        self.f_tlivre = livre = ttk.Frame(f)
+        livre.pack(fill="x")
+        linha = ttk.Frame(livre)
         linha.pack(fill="x")
         ttk.Label(linha, text="Assunto", style="Campo.TLabel").pack(side="left")
         ttk.Label(linha, text="opcional", style="Sub.TLabel").pack(side="left", padx=(_p(8), 0))
         self.v_tassunto = tk.StringVar()
-        e = ttk.Entry(f, textvariable=self.v_tassunto, font=(self.fonte, 11))
+        e = ttk.Entry(livre, textvariable=self.v_tassunto, font=(self.fonte, 11))
         e.pack(fill="x", pady=(_p(6), _p(20)))
         e.focus_set()
 
-        self._campo(f, "Duração")
+        self._campo(livre, "Duração")
         self.v_tdur = tk.IntVar(value=getattr(self, "_ult_tdur", _tr.DURACAO_PADRAO_S // 60))
-        linha = ttk.Frame(f)
+        linha = ttk.Frame(livre)
         linha.pack(fill="x", pady=(_p(6), _p(20)))
         for n in _tr.DURACOES_MIN:
             ttk.Radiobutton(linha, text=f"{n} min", value=n, variable=self.v_tdur).pack(side="left", padx=(0, _p(14)))
+        self.l_tleitura = ttk.Label(f, text="Um texto curto, com barras a cada 5 a 8 palavras. Pare de verdade "
+                                            "em cada barra.", style="Sub.TLabel", wraplength=_p(370))
 
         # mais opções: alvo de ritmo e a nota do Sinapse que confere o conteúdo
         alvos = {f"{_tr._br(a, 1)} sílabas/s · {r}": a for a, r in sorted(_tr.ALVOS.items(), key=lambda x: -x[0])}
@@ -854,13 +861,31 @@ class App(tk.Tk):
                           font=(self.fonte, 10))
         cb.pack(fill="x", pady=(_p(2), _p(8)))
         cb.bind("<<ComboboxSelected>>", atualizar)
-        ttk.Label(corpo, text="Nota do Sinapse para conferir o conteúdo (explicar tema)",
+        ttk.Label(corpo, text="Nota do Sinapse: confere o conteúdo (explicar tema) ou dá o texto (ler em voz alta)",
                   style="Sub.TLabel", wraplength=_p(370)).pack(anchor="w")
         cbn = ttk.Combobox(corpo, textvariable=self.v_tnota, values=["nenhuma", *notas], state="readonly",
                            font=(self.fonte, 10))
         cbn.pack(fill="x", pady=(_p(2), 0))
         cbn.bind("<<ComboboxSelected>>", atualizar)
         atualizar()
+
+        def ttipo_mudou():
+            # leitura ritmada: sem assunto nem duração (o texto decide), alvo 4,5; voltar põe o padrão
+            leitura = self.v_ttipo.get() == "leitura"
+            chave = {a: k for k, a in alvos.items()}
+            if leitura:
+                livre.pack_forget()
+                self.l_tleitura.pack(anchor="w", after=tipo_linha, pady=(0, _p(20)))
+                self.v_talvo.set(chave[_tr.ALVO_LEITURA])
+            else:
+                self.l_tleitura.pack_forget()
+                livre.pack(fill="x", after=tipo_linha)
+                if alvos.get(self.v_talvo.get()) == _tr.ALVO_LEITURA:
+                    self.v_talvo.set(chave[_tr.ALVO_PADRAO])
+            atualizar()
+        self._ttipo_mudou = ttipo_mudou
+        if self.v_ttipo.get() == "leitura":
+            ttipo_mudou()
 
         rod = ttk.Frame(f)
         rod.pack(side="bottom", fill="x")
@@ -900,8 +925,24 @@ class App(tk.Tk):
                   style="Sub.TLabel", wraplength=_p(370)).pack(anchor="w")
         self.l_ttempo = ttk.Label(f, text="0:00", style="Grande.TLabel")
         self.l_ttempo.pack(anchor="w", pady=(_p(18), 0))
+        c["duracao_alvo_s"] = self.t.m["duracao_alvo_s"]          # na leitura, o tempo do texto no ritmo-alvo
         self.l_talvo = ttk.Label(f, text=f"alvo {_tr._mmss(c['duracao_alvo_s'])}", style="Sub.TLabel")
-        self.l_talvo.pack(anchor="w", pady=(0, _p(24)))
+        self.l_talvo.pack(anchor="w")
+        # ritmo ao vivo (22/10/2026): uma linha discreta, vazia até a primeira estimativa; só com GPU
+        self.l_tritmo = ttk.Label(f, text="", style="Sub.TLabel")
+        self.l_tritmo.pack(anchor="w", pady=(0, _p(24)))
+        self.rv = None
+        if self.gpu:
+            import ao_vivo
+            self.rv = ao_vivo.RitmoAoVivo(self.t, self.cfg, lambda r: self.q.put(lambda: self._mostrar_ritmo(r)))
+            self.rv.start()
+        lt = self.t.m.get("leitura")
+        if lt:
+            # o texto com as barras, grande o bastante para ler a meio metro da tela
+            self.geometry(f"{self.winfo_width()}x{max(self.winfo_height(), _p(680))}")
+            # espaço inquebrável antes da barra: ela nunca começa uma linha
+            ttk.Label(f, text=" | ".join(lt["trechos"]), font=(self.fonte, 13), wraplength=_p(376),
+                      justify="left").pack(anchor="w", pady=(0, _p(20)))
         ttk.Label(f, text="Microfone", style="Sub.TLabel").pack(anchor="w")
         self.b_tnivel = ttk.Progressbar(f, maximum=100)
         self.b_tnivel.pack(fill="x", pady=(_p(2), _p(14)))
@@ -932,11 +973,25 @@ class App(tk.Tk):
         self.l_talerta.configure(text=alerta)
         self.after(250, self._treino_tique)
 
+    def _mostrar_ritmo(self, r):
+        """"ritmo agora 5,3 sílabas/s": vermelho só acima do alvo + tolerância (a cor comunica estado)."""
+        import treino as _tr
+        if self.gt is None or getattr(self, "l_tritmo", None) is None:
+            return
+        alvo = self.tctx.get("alvo") or _tr.ALVO_PADRAO
+        acima = r["silabas_s"] > alvo + _tr.TOLERANCIA_ALVO
+        self.l_tritmo.configure(text=f"ritmo agora {_tr._br(r['silabas_s'], 1)} sílabas/s"
+                                     + (f" · acima do alvo de {_tr._br(alvo, 1)}" if acima else ""),
+                                style="Alerta.TLabel" if acima else "Sub.TLabel")
+
     def treino_parar(self):
         import treino as _tr
         g, self.gt = self.gt, None
         if g is None:
             return
+        rv, self.rv = getattr(self, "rv", None), None
+        if rv is not None:
+            rv.parar()
         g.parar()
         t = self.t
         self.analisando_treino = True

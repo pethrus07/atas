@@ -47,7 +47,34 @@ SCHEMA_TREINO = "atas/treino@1"
 MANIFESTO = "treino.json"
 HIST_NOME = "treinos.jsonl"
 
-TIPOS_TREINO = {"reuniao": "Reunião", "tema": "Explicar um tema"}
+TIPOS_TREINO = {"reuniao": "Reunião", "tema": "Explicar um tema", "leitura": "Ler em voz alta"}
+# leitura ritmada (22/10/2026, MELHORIAS 19): um texto curto com barras a cada 5–8 palavras; o exercício
+# é pausar em cada barra. Sem retorno do Claude: a medida é "pausou em quantas barras".
+ALVO_LEITURA = 4.5
+BARRA = " | "
+BARRA_MIN, BARRA_MAX = 5, 8
+PAUSA_BARRA_S = 0.3             # o Whisper encurta a pausa em ~0,2 s (§19): 0,5 s real ≈ 0,3 s medido
+BARRAS_ALVO = 0.7               # pausar em 70% das barras ou mais = ok (referência prática, sem norma)
+TEXTOS_LEITURA = [
+    {"titulo": "Reunião com cliente",
+     "texto": "Toda reunião com cliente começa pelo resultado. Antes de falar de tela ou de prazo, eu digo, "
+              "em uma frase curta, o que muda no dia a dia dele. Depois mostro o problema de hoje, com um "
+              "exemplo que ele reconhece. Só então explico o que vamos fazer, sem entrar no método. Na hora do "
+              "preço, eu falo o número, faço uma pausa e espero. O silêncio depois do preço não incomoda: é o "
+              "tempo de ele pensar. No fim, combino o próximo passo: quem faz, o que faz e até quando."},
+    {"titulo": "Testar antes de entregar",
+     "texto": "Funcionar na minha máquina não é estar pronto. O sistema está pronto quando a pessoa que usa "
+              "faz o trabalho dela sem me chamar. Por isso, eu testo o caminho dela, do começo ao fim, com os "
+              "dados que ela usa. Quando acho um erro, eu anoto o que fiz, o que esperava e o que aconteceu. "
+              "Correção sem registro some na semana seguinte. E antes de dizer que está corrigido, eu meço de "
+              "novo, no mesmo lugar onde o erro apareceu."},
+    {"titulo": "Pausa e ritmo",
+     "texto": "Quem ouve não tem o texto na mão. Cada frase precisa de um instante para chegar, e esse instante "
+              "é a pausa. Quando eu falo rápido demais, a ideia está clara na minha cabeça, mas chega embolada "
+              "no ouvido do outro. A pausa não é hesitação: é o ponto final dito em voz alta. Antes de um "
+              "número, de um prazo ou de uma decisão, eu respiro. Depois dele, espero meio segundo. Assim, a "
+              "pessoa guarda o que importa, e eu escolho a próxima frase com calma."},
+]
 # alvo de sílabas/s (pesquisa de 14/10, seção E): leitura ritmada 4,5 → roteiro de 3 tópicos 5,0 →
 # explicação livre 4,8. A norma de João Pessoa é 4,2 ± 0,7; o Pedro fala ~5,9 nas reuniões.
 ALVOS = {4.8: "padrão", 4.5: "leitura ritmada", 5.0: "roteiro de 3 tópicos"}
@@ -101,6 +128,120 @@ def achar_nota(ref):
     return achada
 
 
+# ── leitura ritmada: o texto com barras ─────────────────────────────────────
+def com_barras(texto, minimo=BARRA_MIN, maximo=BARRA_MAX):
+    """Texto → trechos de ~5 a 8 palavras; cada corte é uma barra (uma pausa). Corta primeiro na
+    pontuação (vírgula, ponto, dois-pontos); pedaço maior que `maximo` é dividido em partes iguais
+    (11 palavras → 6 + 5); pedaço menor que `minimo` se junta ao vizinho se couber em `maximo`."""
+    import math
+    import re
+    pedacos = []
+    for frase in re.split(r"(?<=[,;.!?:])\s+", str(texto or "").strip()):
+        ws = frase.split()
+        if not ws:
+            continue
+        k = max(1, math.ceil(len(ws) / maximo))
+        base, sobra = divmod(len(ws), k)
+        i = 0
+        for j in range(k):
+            n = base + (1 if j < sobra else 0)
+            pedacos.append(ws[i:i + n])
+            i += n
+    out = []
+    for p in pedacos:
+        if (out and (len(p) < minimo or len(out[-1]) < minimo) and len(out[-1]) + len(p) <= maximo
+                and out[-1][-1][-1:] not in ".!?"):           # nunca junta por cima de um ponto final
+            out[-1] = out[-1] + p
+        else:
+            out.append(p)
+    return [" ".join(p) for p in out]
+
+
+def texto_da_nota(caminho, max_palavras=140):
+    """Prosa de uma nota do Sinapse para ler em voz alta: sem frontmatter, títulos, listas, tabelas,
+    código e links; parágrafos inteiros até ~`max_palavras`, cortado no fim de uma frase. None se a nota
+    não tem prosa bastante (menos de 40 palavras)."""
+    import re
+    txt = pathlib.Path(caminho).read_text(encoding="utf-8")
+    txt = re.sub(r"\A---\n.*?\n---\n", "", txt, flags=re.S)
+    txt = re.sub(r"```.*?```", "", txt, flags=re.S)
+    paragrafos, atual = [], []
+    for ln in txt.splitlines():
+        s = ln.strip()
+        if not s or s.startswith(("#", "|", ">", "-", "*", "!", "<")) or re.match(r"^\d+[.)]\s", s):
+            if atual:
+                paragrafos.append(" ".join(atual))
+                atual = []
+            continue
+        atual.append(s)
+    if atual:
+        paragrafos.append(" ".join(atual))
+    limpo = []
+    for p in paragrafos:
+        p = re.sub(r"\[\[([^\]|]+)\|([^\]]+)\]\]", r"\2", p)
+        p = re.sub(r"\[\[([^\]]+)\]\]", r"\1", p)
+        p = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", p)
+        p = re.sub(r"[*_`]+", "", p)
+        if len(p.split()) >= 8 and p.rstrip()[-1:] in ".!?":
+            limpo.append(p.strip())
+    texto = ""
+    for p in limpo:
+        if len((texto + " " + p).split()) > max_palavras:
+            if not texto:                                   # 1º parágrafo longo: corta numa frase
+                frases_ = re.split(r"(?<=[.!?])\s+", p)
+                for f in frases_:
+                    if len((texto + " " + f).split()) > max_palavras and texto:
+                        break
+                    texto = (texto + " " + f).strip()
+            break
+        texto = (texto + " " + p).strip()
+    return texto if len(texto.split()) >= 40 else None
+
+
+def texto_de_leitura(nota=None, n=0):
+    """{titulo, texto, trechos, fonte}: da nota de estudo (se tiver prosa bastante) ou do conjunto
+    embutido, em rodízio pelo número `n` de leituras já feitas."""
+    if nota:
+        p = achar_nota(nota)
+        txt = texto_da_nota(p)
+        if txt:
+            return {"titulo": p.stem, "texto": txt, "trechos": com_barras(txt), "fonte": f"nota {p.stem}"}
+    e = TEXTOS_LEITURA[int(n or 0) % len(TEXTOS_LEITURA)]
+    return {"titulo": e["titulo"], "texto": e["texto"], "trechos": com_barras(e["texto"]), "fonte": "embutido"}
+
+
+def pausas_nas_barras(palavras, trechos, limiar=PAUSA_BARRA_S):
+    """Pausou nas barras? Alinha as palavras lidas (Whisper) às do texto (difflib, sem acento nem
+    pontuação) e, em cada barra cujas duas palavras vizinhas foram achadas, mede o silêncio entre elas.
+    Devolve {barras, medidas, pausou, pct, lidas_pct, fora}: `fora` = pausas ≥ 0,5 s longe das barras."""
+    import difflib
+    alvo = [_ata.norm(w) for tr in trechos for w in tr.split()]
+    alvo = [w for w in alvo if w]
+    fim_trecho, k = set(), 0
+    for tr in trechos[:-1]:
+        k += len([w for w in tr.split() if _ata.norm(w)])
+        fim_trecho.add(k - 1)                                  # índice da última palavra antes da barra
+    ws = sorted(palavras, key=lambda p: p["start"])
+    lidas = [_ata.norm(w["w"]) for w in ws]
+    mapa = {}
+    sm = difflib.SequenceMatcher(None, alvo, lidas, autojunk=False)
+    for a, b, n in sm.get_matching_blocks():
+        for d in range(n):
+            mapa[a + d] = b + d
+    medidas = pausou = 0
+    for i in sorted(fim_trecho):
+        if i in mapa and i + 1 in mapa and mapa[i + 1] == mapa[i] + 1:
+            medidas += 1
+            if ws[mapa[i + 1]]["start"] - ws[mapa[i]]["end"] >= limiar:
+                pausou += 1
+    em_barra = {mapa[i] for i in fim_trecho if i in mapa}
+    fora = sum(1 for j in range(len(ws) - 1)
+               if ws[j + 1]["start"] - ws[j]["end"] >= PAUSA_S and j not in em_barra)
+    return {"barras": len(fim_trecho), "medidas": medidas, "pausou": pausou,
+            "pct": round(pausou / medidas, 2) if medidas else None,
+            "lidas_pct": round(len(mapa) / len(alvo), 2) if alvo else 0, "fora": fora}
+
+
 # ── o treino no disco ────────────────────────────────────────────────────────
 class Treino(Sessao):
     """Mesma pasta-de-sessão do gravador (mic.pcm, .batida, audio/), mas com manifesto próprio
@@ -111,10 +252,16 @@ class Treino(Sessao):
         escrever_json(self.pasta / MANIFESTO, self.m)
 
     @classmethod
-    def criar(cls, tipo, assunto="", nota=None, duracao_alvo_s=DURACAO_PADRAO_S, alvo=ALVO_PADRAO,
-              raiz=None, quando=None, origem="gravacao"):
+    def criar(cls, tipo, assunto="", nota=None, duracao_alvo_s=DURACAO_PADRAO_S, alvo=None,
+              raiz=None, quando=None, origem="gravacao", leitura=None):
         if tipo not in TIPOS_TREINO:
             raise ValueError(f"tipo de treino inválido: {tipo!r} (use {', '.join(TIPOS_TREINO)})")
+        if tipo == "leitura":
+            # o texto vem da nota (02-ESTUDO) ou do conjunto embutido, em rodízio; a duração-alvo é o tempo
+            # do texto no ritmo-alvo
+            alvo = alvo or ALVO_LEITURA
+            leitura = leitura or texto_de_leitura(nota, len([t for t in listar(raiz) if t.tipo_treino == "leitura"]))
+            duracao_alvo_s = max(20, round(af.silabas(leitura["texto"]) / alvo))
         raiz = raiz_treinos(raiz)
         raiz.mkdir(parents=True, exist_ok=True)
         quando = quando or _dt.datetime.now()
@@ -133,6 +280,8 @@ class Treino(Sessao):
              "inicio": quando.astimezone().isoformat(timespec="seconds") if origem != "gravacao" else None,
              "fim": None, "estado": "preparando", "dispositivos": {}, "audio": {"sr": SR},
              "etapas": {}, "avisos": [], "manter": False}
+        if leitura:
+            m["leitura"] = leitura
         t = cls(pasta, m)
         t.salvar()
         return t
@@ -290,10 +439,12 @@ def trecho_mais_corrido(palavras, janela_s=JANELA_CORRIDO_S, minimo_palavras=5):
     return melhor
 
 
-def medir(palavras, audio_voz=None, gravado_s=None, alvo=ALVO_PADRAO, duracao_alvo_s=DURACAO_PADRAO_S):
-    """As métricas do treino. `audio_voz`: o áudio do microfone (para a entonação)."""
+def medir(palavras, audio_voz=None, gravado_s=None, alvo=ALVO_PADRAO, duracao_alvo_s=DURACAO_PADRAO_S, trechos=None):
+    """As métricas do treino. `audio_voz`: o áudio do microfone (para a entonação). `trechos`: o texto
+    da leitura ritmada com as barras (mede se ele pausou nelas)."""
     segs = segmentos(palavras)
     texto = " ".join(w["w"] for w in palavras)
+    barras = pausas_nas_barras(palavras, trechos) if trechos else None
     an = af.analisar(segs)
     post = af.postura(segs)
     pc = pausas_e_corridas(palavras)
@@ -335,6 +486,8 @@ def medir(palavras, audio_voz=None, gravado_s=None, alvo=ALVO_PADRAO, duracao_al
         "voz": {k: v[k] for k in ("entonacao_st", "volume_variacao_db", "volume_db", "tom_hz")} if v else None,
         "voz_erro": voz_erro,
         "trecho_corrido": trecho_mais_corrido(palavras),
+        "barras": barras,
+        "barras_pct": barras["pct"] if barras else None,
     }
 
 
@@ -512,6 +665,26 @@ def ler(m, comp):
         "entonacao_st": {"ok": f"viva ({_br(ENTONACAO_ALVO)} ou mais)", "fora": f"abaixo de {_br(ENTONACAO_ALVO)} semitons",
                          "sem": "sem áudio para medir"},
     }
+    # leitura ritmada (22/10/2026): no lugar das muletas (lendo um texto, não há muleta), as barras
+    br_ = m.get("barras")
+    if br_:
+        pct = br_.get("pct")
+        st = "sem" if pct is None else ("ok" if pct >= BARRAS_ALVO else "fora")
+        barra = item(
+            "barras", "Pausa nas barras", pct, (f"{br_['pausou']} de {br_['medidas']}" if br_["medidas"] else "não medida"),
+            "Em quantas barras do texto você fez uma pausa (silêncio de ~meio segundo; o Whisper mede ~0,2 s a "
+            "menos). É o exercício: uma pausa a cada 5 a 8 palavras.",
+            f"{int(BARRAS_ALVO * 100)}% das barras ou mais", "referência prática deste sistema, sem norma publicada", st,
+            (f"Você pausou em {br_['pausou']} das {br_['medidas']} barras que deu para medir ({int(round(100 * pct))}%); "
+             f"leu {int(round(100 * br_['lidas_pct']))}% do texto; {br_['fora']} pausa(s) longe das barras") if pct is not None
+            else "Não deu para alinhar a leitura ao texto",
+            _comp_txt("barras_pct", comp, lambda x: f"{int(round(100 * x))}%", reunioes=False),
+            "mantenha: agora leve a pausa para a fala livre." if st == "ok" else
+            "pare de verdade em cada barra, mesmo que pareça devagar: conte \"um\" de cabeça.")
+        extras.insert(0, principais[2])
+        principais[2] = barra
+        curtos["barras"] = {"ok": f"{int(BARRAS_ALVO * 100)}% ou mais das barras", "fora": f"abaixo de {int(BARRAS_ALVO * 100)}% das barras",
+                            "sem": "leitura não alinhada ao texto"}
     for it in principais:
         it["curto"] = curtos[it["chave"]].get(it["status"], "")
 
@@ -717,7 +890,8 @@ def analisar(t, cfg=None, log=print, claude=True):
             nota_txt = nota_p.read_text(encoding="utf-8")          # só leitura: o vault não é tocado
         except Exception as e:
             t.avisar(f"nota não lida: {e}")
-    m = medir(palavras, fonte, gravado, t.m.get("alvo_silabas_s"), t.m.get("duracao_alvo_s"))
+    leitura = t.m.get("leitura") or {}
+    m = medir(palavras, fonte, gravado, t.m.get("alvo_silabas_s"), t.m.get("duracao_alvo_s"), leitura.get("trechos"))
     data = t.m.get("inicio") or t.m.get("criado")
     comp = comparar(t.tipo_treino, t.id, data)
     principais, extras = ler(m, comp)
@@ -725,6 +899,8 @@ def analisar(t, cfg=None, log=print, claude=True):
            "retorno": None, "retorno_erro": None, "em": agora_iso()}
     if not palavras:
         res["retorno_erro"] = "nenhuma fala reconhecida no áudio: confira o microfone"
+    elif t.tipo_treino == "leitura":
+        pass                                       # a medida é das barras; não há conteúdo para o Claude olhar
     elif not claude or not cfg.get("estruturar", True):
         res["retorno_erro"] = "retorno do Claude desligado: só as métricas"
     else:
@@ -748,7 +924,7 @@ def analisar(t, cfg=None, log=print, claude=True):
     return t.m
 
 
-def importar(arquivo, tipo="reuniao", assunto="", nota=None, duracao_alvo_s=DURACAO_PADRAO_S, alvo=ALVO_PADRAO,
+def importar(arquivo, tipo="reuniao", assunto="", nota=None, duracao_alvo_s=DURACAO_PADRAO_S, alvo=None,
              raiz=None, quando=None):
     """Um áudio já gravado (ex.: do celular) vira um treino: decodifica para o mic.pcm do treino e segue
     o mesmo caminho da gravação. O arquivo de origem não é tocado."""
@@ -854,7 +1030,11 @@ def texto_resultado(t):
         if it["dica"]:
             L.append(f"    - O que fazer: {it['dica']}")
     ret = r.get("retorno")
-    L += ["", "## O retorno"]
+    if t.tipo_treino == "leitura" and t.m.get("leitura"):
+        lt = t.m["leitura"]
+        L += ["", f"## O texto ({lt.get('fonte')})", "", BARRA.join(lt.get("trechos") or [])]
+        ret = None
+    L += ["", "## O retorno"] if t.tipo_treino != "leitura" else []
     if ret:
         L += [f"- **Manter:** {ret['manter']['texto']}{_cit(ret['manter'])}",
               f"- **Mudar:** {ret['mudar']['texto']}{_cit(ret['mudar'])}", ""]
@@ -867,7 +1047,7 @@ def texto_resultado(t):
                 marca = {"confere": "✓", "diverge": "✗", "fora_da_nota": "?"}[c["situacao"]]
                 prova = "" if c.get("nota_verificada") or not c.get("trecho_nota") else " _(trecho da nota não localizado)_"
                 L.append(f"- {marca} {c['afirmacao']} — {c['comentario']}{prova}")
-    else:
+    elif t.tipo_treino != "leitura":
         L.append(f"_Sem retorno do Claude: {r.get('retorno_erro') or 'não pedido'}._")
     L += ["", "## Mais detalhes"]
     for it in r.get("extras") or []:

@@ -133,7 +133,7 @@ def _fechado(sch):
 
 
 def test_esquema_fechado_e_aspectos_por_tipo():
-    for tipo in treino.TIPOS_TREINO:
+    for tipo in treino.ASPECTOS:                       # a leitura não tem retorno do Claude
         sch = treino.esquema(tipo)
         _fechado(sch)
         enum = sch["properties"]["pontos"]["items"]["properties"]["aspecto"]["enum"]
@@ -310,3 +310,125 @@ def test_treino_ponta_a_ponta_com_audio_sintetico(tmp_path, monkeypatch):
     assert m["trecho_corrido"] is not None
     assert not (tmp_path / "vault-vazio").exists()
     assert (t.audio_dir / "mic.opus").exists()
+
+
+# ── leitura ritmada (22/10/2026) ────────────────────────────────────────────
+def test_barras_a_cada_5_a_8_palavras_sem_juntar_por_cima_do_ponto():
+    for e in treino.TEXTOS_LEITURA:
+        tr = treino.com_barras(e["texto"])
+        assert " ".join(tr) == " ".join(e["texto"].split())          # nada se perde nem se repete
+        tamanhos = [len(x.split()) for x in tr]
+        assert max(tamanhos) <= treino.BARRA_MAX
+        assert sum(4 <= n <= 8 for n in tamanhos) >= 0.8 * len(tamanhos)
+        assert not any(". " in x for x in tr)                          # ponto final é sempre barra
+    assert treino.com_barras("Uma frase de onze palavras sem nenhuma vírgula no meio dela.") == \
+        ["Uma frase de onze palavras sem", "nenhuma vírgula no meio dela."]
+
+
+def test_texto_da_nota_tira_o_que_nao_e_prosa(tmp_path):
+    p = tmp_path / "cap.md"
+    p.write_text("---\ntipo: estudo\n---\n# CAP\n\n- item de lista que não entra\n\n"
+                 "O teorema [[cap-e-consistencia|CAP]] diz que, numa partição de rede, o sistema escolhe entre "
+                 "consistência e disponibilidade. Não dá para ter as duas ao mesmo tempo quando a rede se divide. "
+                 "Por isso, bancos como o **Cassandra** preferem responder sempre, e acertam depois. Já um banco "
+                 "relacional com réplica síncrona prefere recusar a escrita a responder errado.\n\n```\ncodigo()\n```\n",
+                 encoding="utf-8")
+    txt = treino.texto_da_nota(p)
+    assert txt.startswith("O teorema CAP diz") and "**" not in txt and "item de lista" not in txt and "codigo" not in txt
+    (tmp_path / "curta.md").write_text("# X\n\nSó isso aqui.\n", encoding="utf-8")
+    assert treino.texto_da_nota(tmp_path / "curta.md") is None
+
+
+def test_pausas_nas_barras_alinha_a_leitura_ao_texto():
+    trechos = ["Quem ouve não tem o texto na mão.", "Cada frase precisa de um instante,", "e esse instante é a pausa."]
+    # pausou na 1ª barra (0,6 s), não na 2ª (0,1 s); uma pausa de 0,7 s no meio do 2º trecho
+    roteiro = [("Quem ouve não tem o texto na mão.", 0.25, 0.6), ("Cada frase precisa", 0.25, 0.7),
+               ("de um instante,", 0.25, 0.1), ("e esse instante é a pausa.", 0.25, 0)]
+    b = treino.pausas_nas_barras(_palavras(roteiro), trechos)
+    assert b == {"barras": 2, "medidas": 2, "pausou": 1, "pct": 0.5, "lidas_pct": 1.0, "fora": 1}
+    # palavra lida errada perto da barra: aquela barra não é medida
+    roteiro[1] = ("Toda frase precisa", 0.25, 0.7)
+    assert treino.pausas_nas_barras(_palavras(roteiro), trechos)["medidas"] == 1
+
+
+def test_leitura_no_lugar_das_muletas_e_sem_claude(ambiente, monkeypatch):
+    def nao_chame(*a, **k):
+        raise AssertionError("leitura não chama o Claude")
+    monkeypatch.setattr(estruturar, "chamar_claude", nao_chame)
+    t = _treino_com_audio(tipo="leitura")
+    lt = t.m["leitura"]
+    assert t.m["alvo_silabas_s"] == treino.ALVO_LEITURA and lt["fonte"] == "embutido"
+    assert t.m["duracao_alvo_s"] == round(analise_fala.silabas(lt["texto"]) / treino.ALVO_LEITURA)
+    # a leitura "perfeita" do texto, com pausa de 0,6 s em cada barra
+    monkeypatch.setattr(treino, "transcrever", lambda x, cfg, log=print: (
+        _palavras([(tr, 0.22, 0.6) for tr in lt["trechos"]]), {"modelo": "falso"}))
+    treino.analisar(t, {"estruturar": True, "audio_reter_dias": 30}, log=lambda *_: None)
+    res = treino.Treino.abrir(t.id).m["resultado"]
+    chaves = [it["chave"] for it in res["principais"]]
+    assert chaves == ["silabas_por_s", "pausas_por_min", "barras", "entonacao_st"]
+    barra = res["principais"][2]
+    assert barra["status"] == "ok" and barra["valor"] == 1.0 and barra["curto"]
+    assert res["extras"][0]["chave"] == "muleta_pura_por_1000"
+    assert res["retorno"] is None and res["retorno_erro"] is None
+    md = (t.pasta / "resultado.md").read_text(encoding="utf-8")
+    assert "## O texto (embutido)" in md and treino.BARRA.join(lt["trechos"]) in md and "Sem retorno" not in md
+    # a próxima leitura pega o texto seguinte do rodízio; com nota, o texto vem dela
+    assert treino.Treino.criar("leitura").m["leitura"]["titulo"] != lt["titulo"]
+    (ambiente["vault"] / "02-ESTUDO" / "pausa.md").write_text(
+        "# Pausa\n\n" + " ".join(["A pausa organiza a fala e dá tempo para quem ouve guardar a ideia."] * 4) + "\n",
+        encoding="utf-8")
+    assert treino.Treino.criar("leitura", nota="pausa").m["leitura"]["fonte"] == "nota pausa"
+
+
+# ── ritmo ao vivo na tela "Treinando" (22/10/2026) ─────────────────────────
+def test_ritmo_da_janela():
+    import ao_vivo
+    ws = _palavras([("A proposta resolve o atraso no fechamento do mês.", 0.30, 0.7)] * 3)
+    r = ao_vivo.ritmo_da_janela(ws)
+    span = ws[-1]["end"] - ws[0]["start"]
+    assert r == round(analise_fala.silabas(" ".join(w["w"] for w in ws)) / span, 2)
+    assert ao_vivo.ritmo_da_janela(ws[:5]) is None                     # pouca fala: não diz nada
+
+
+def test_ritmo_ao_vivo_le_os_ultimos_20_s_e_entrega(ambiente):
+    import ao_vivo
+
+    class W:
+        def __init__(self, w, a, b):
+            self.word, self.start, self.end = w, a, b
+
+    class S:
+        def __init__(self, ws):
+            self.words = ws
+
+    vistos = []
+
+    class Modelo:
+        def transcribe(self, x, **kw):
+            vistos.append((len(x), kw))
+            ws = _palavras([("A proposta resolve o atraso no fechamento do mês.", 0.30, 0.7)] * 3)
+            return [S([W(w["w"], w["start"], w["end"]) for w in ws])], None
+    t = _treino_com_audio(segundos=45)
+    entregues = []
+    rv = ao_vivo.RitmoAoVivo(t, {}, entregues.append, modelo=Modelo())
+    r = rv.passo()
+    assert entregues == [r] and r["silabas_s"] > 0 and r["palavras"] == 27
+    n, kw = vistos[0]
+    assert n == int(ao_vivo.RITMO_JANELA_S * 16000)                     # só a janela final, não o treino todo
+    assert kw["word_timestamps"] and kw["beam_size"] == 1
+
+
+def test_ritmo_na_tela_vermelho_so_acima_do_alvo():
+    import app
+
+    class Rot:
+        def configure(self, **kw):
+            self.kw = kw
+
+    class Falso:
+        gt, tctx, l_tritmo = object(), {"alvo": 4.8}, Rot()
+    f = Falso()
+    app.App._mostrar_ritmo(f, {"silabas_s": 5.3, "palavras": 30})
+    assert f.l_tritmo.kw["style"] == "Alerta.TLabel" and "acima do alvo de 4,8" in f.l_tritmo.kw["text"]
+    app.App._mostrar_ritmo(f, {"silabas_s": 4.9, "palavras": 30})
+    assert f.l_tritmo.kw == {"text": "ritmo agora 4,9 sílabas/s", "style": "Sub.TLabel"}

@@ -26,7 +26,7 @@ Valter, sessão `2026-10-05_2303_alinhamento-valter`), conferida item a item con
 | 16 | Formato da reunião de cliente (descoberta/demo/alinhamento) na janela, opcional e só em cliente; `atas.py formato`; o /ata propõe | ✅ 14/10 | `app.py::inicio`, `atas.py::c_formato`, `tests/test_formato.py` |
 | 17 | Recalcular o histórico real do Raio-X com as regras v3 | ✅ 14/10 · 4 reuniões, backup `historico.jsonl.bak-2026-10-14`, vault intocado | `ARQUITETURA.md` §17 |
 | 18 | Reunião presencial gravada no celular: `importar`, `vigiar`, "Você" pela amostra de voz e a confirmar, tipo pendente | ✅ 14/10 · ⏳ falta calibrar em áudio de celular real | `celular.py`, `ARQUITETURA.md` §18, `tests/test_celular.py` |
-| 19 | Modo treino: ensaio sozinho (reunião ou explicar tema), só o microfone, Raio-X de monólogo (ritmo, pausas, muletas, entonação) contra o alvo, o último treino e as reuniões, retorno do Claude auditado; fora do Raio-X das reuniões e do vault | ✅ 14/10 · ⏳ falta o primeiro treino real e o ritmo ao vivo | `treino.py`, `app.py::treino_*`, `ARQUITETURA.md` §19, `tests/test_treino.py` |
+| 19 | Modo treino: ensaio sozinho (reunião ou explicar tema), só o microfone, Raio-X de monólogo (ritmo, pausas, muletas, entonação) contra o alvo, o último treino e as reuniões, retorno do Claude auditado; fora do Raio-X das reuniões e do vault | ✅ 14/10 · ✅ 22/10 "Ler em voz alta" (texto com barras, pausa nas barras) e ritmo ao vivo (small na GPU, ±0,18 sílaba/s do turbo) · ⏳ falta o primeiro treino real | `treino.py`, `app.py::treino_*`, `ARQUITETURA.md` §19, `tests/test_treino.py` |
 | 20 | Marcar momento (ideia do Granola): Ctrl+Alt+M global ou botão durante a gravação → `marcas` no sessao.json; o Claude prioriza o trecho (45 s antes, 15 s depois); seção "Momentos marcados" auditada no topo da ata interna, fora do entregável; `marcar`/`marcas` no CLI, `importar --marcas`; desde 22/10, `[mm:ss] ★ MARCA` no `ao-vivo.md` no ponto certo | ✅ 14/10 · ✅ 22/10 marca no ao vivo · ⏳ falta a primeira reunião real marcada ao vivo | `marcas.py`, `atalho.py`, `app.py::_ligar_atalho`, `ARQUITETURA.md` §20, `tests/test_marcas.py` |
 | 21 | Daily da Parresia: `formato daily` (formato por tipo), fora de toda medição com trava no ponto de escrita; ata `atas/daily@1` (com você, frentes rastreadas, por pessoa, card conferido a ±60 s, menção não tratada); quem falou sem digitar nomes (teto próprio + rodada); "Gravar a próxima daily"; `atas.py daily` | ✅ 19/10 · ⏳ não calibrado: falta a primeira daily de 1 h gravada de verdade | `daily.py`, `sessao.fora_da_medicao`, `ARQUITETURA.md` §21, `tests/test_daily.py` |
 | 22 | Ao vivo intervencionista: liga reunião a reunião (Mais opções, só com GPU; liga o ao vivo junto; liga/desliga no meio); filtro sem IA (pergunta para ele, card/frente, valor/prazo, projeto; daily só os dois primeiros); Claude só leitura, 2 linhas com fonte ou "não sei"; teto 20 e 45 s, uma por vez; cartão sem foco no canto; `intervencoes.jsonl` | ✅ 22/10 · ⏳ falta a primeira reunião real com ele ligado | `intervencionista.py`, `app.py::_ligar_interv`, `ARQUITETURA.md` §22, `tests/test_intervencionista.py` |
@@ -151,12 +151,13 @@ Pedido do Pedro ("gosto do modo treino para reunião"). Janela: link "Treinar" �
 **Pendente:**
 - **Primeiro treino real** com o fone: conferir se a faixa de pausas (8 a 15/min, heurística) e o
   limiar de 0,5 s fazem sentido na voz dele (o Whisper encurta a pausa em ~0,2 s).
-- **Ritmo ao vivo** na tela "Treinando" (sílabas/s dos últimos ~20 s): ficou de fora de propósito. O
-  `ao_vivo.py` transcreve em janelas de 30 s com o modelo small e sem tempo por palavra; um indicador
-  confiável pede janela menor e `word_timestamps`, disputando a GPU com a gravação. Fazer depois de o
-  modo treino ser usado algumas vezes.
-- **Exercícios guiados** da pesquisa (leitura ritmada a 4,5 → roteiro de 3 tópicos a 5,0 → explicação
-  livre a 4,8): hoje o alvo é escolhido à mão em "Mais opções"; um texto de leitura pronto ajudaria.
+- ~~Ritmo ao vivo~~ ✅ 22/10: `ao_vivo.RitmoAoVivo`, `small` na GPU com o tempo de cada palavra, últimos 20 s a
+  cada 5 s. Medido contra o turbo em 30 janelas da voz real do Pedro: diferença média 0,18 sílaba/s (p90 0,45),
+  2,3 s de GPU por estimativa. Só com GPU. `ARQUITETURA.md` §19.
+- ~~Texto pronto para a leitura ritmada~~ ✅ 22/10: tipo "Ler em voz alta", texto da nota de `02-ESTUDO` ou de 3
+  embutidos, barras a cada 5–8 palavras e a medida "pausa nas barras" no lugar das muletas.
+- Ainda pendente dos exercícios guiados: o **roteiro de 3 tópicos a 5,0** (hoje só o alvo à mão em "Mais opções").
+- Calibrar com os primeiros treinos reais: limiar de 0,3 s e meta de 70% da pausa nas barras.
 
 ## 21. Daily da Parresia (19/10/2026) · ✅ · ⏳ não calibrado
 Pedido do Pedro: dailies de >1 h com 7+ pessoas, rodada pelo nome, ele fala pouco (09/10: 8,9%); quer achar

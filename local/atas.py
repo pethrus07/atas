@@ -34,7 +34,7 @@ Atas — linha de comando. É a interface do /ata (Claude) e o plano B da janela
     python atas.py calibrar <id>          diarização com vários limiares no áudio guardado [--daily]
     python atas.py importar-legado        traz as atas soltas de antes da v2
     python atas.py limpar-audio           aplica a retenção do áudio
-    python atas.py treinar                treino de fala sozinho (só o microfone) [--tipo reuniao|tema]
+    python atas.py treinar                treino de fala sozinho (só o microfone) [--tipo reuniao|tema|leitura]
                                           [--assunto A] [--nota <nome ou caminho>] [--duracao 180] [--alvo 4.8]
     python atas.py treino <áudio>         analisa um treino já gravado (ex.: do celular), mesmas opções
     python atas.py treinos                os treinos com a evolução [--tipo] [-n 20] [--manter <id>]
@@ -942,6 +942,10 @@ def c_treinar(a):
     print(f"  Microfone: {disp['mic'].name}")
     for av in disp["avisos"]:
         print(f"  ⚠ {av}")
+    if t.m.get("leitura"):                     # leitura ritmada: o texto, com uma pausa em cada barra
+        print(f"\n  Leia em voz alta ({t.m['leitura']['titulo']}), pausando em cada barra:\n")
+        print("  " + treino.BARRA.join(t.m["leitura"]["trechos"]))
+        op["duracao_alvo_s"] = t.m["duracao_alvo_s"]
     g = record.Gravador(t, disp)
     g.iniciar()
     try:
@@ -1137,11 +1141,11 @@ def main(argv=None):
         if nome == "treino":
             p.add_argument("arquivo")
             p.add_argument("--data", help='quando foi o treino, "AAAA-MM-DD HH:MM" (padrão: nome ou data do arquivo)')
-        p.add_argument("--tipo", default="reuniao", help="reuniao (padrão) ou tema")
+        p.add_argument("--tipo", default="reuniao", help="reuniao (padrão), tema ou leitura (ler em voz alta)")
         p.add_argument("--assunto", help="sobre o que é o treino (opcional)")
         p.add_argument("--nota", help="nota de estudo do Sinapse para conferir o conteúdo (nome em 02-ESTUDO ou caminho)")
         p.add_argument("--duracao", type=int, default=180, help="alvo de duração em segundos (padrão 180)")
-        p.add_argument("--alvo", type=float, default=4.8, help="alvo de sílabas/s (4.8 padrão; 4.5 leitura ritmada)")
+        p.add_argument("--alvo", type=float, default=None, help="alvo de sílabas/s (4.8 padrão; 4.5 na leitura)")
         p.add_argument("--sem-claude", action="store_true", help="só as métricas")
         p.set_defaults(fn=fn)
     p = sub.add_parser("treinos", help="os treinos com a evolução")

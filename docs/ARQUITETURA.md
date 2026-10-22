@@ -741,6 +741,7 @@ o Raio-X de monólogo e um retorno curto do Claude. Tudo em `local/treino.py`; a
 - `reuniao`: ensaiar uma fala de reunião de cliente. O Claude olha: ideia central nos primeiros ~20 s;
   problema → o que muda → próximo passo; **promete resultado, não método**; compromisso com dono e
   prazo; perguntas abertas (se houver descoberta); certeza absoluta/promessa no reflexo.
+- `leitura` (22/10/2026): ler em voz alta um texto com barras; ver "Ler em voz alta" abaixo.
 - `tema`: explicar um assunto de estudo (nota de `sinapse/02-ESTUDO` ou texto livre no assunto). Com
   nota, o Claude confere cada afirmação contra ela (`confere` · `diverge` · `fora_da_nota`) e diz se a
   explicação passou por ideia → problema → mecanismo → exemplo.
@@ -805,13 +806,42 @@ as **7 de 7** pausas achadas pelos tempos do Whisper, medidas entre 0,60 e 1,00 
 ("vou configurar o servidor…") e a promessa no reflexo; no tema "CAP" achou a afirmação que contradiz
 a nota ("abrir mão da partição") com o trecho da nota.
 
+**Ler em voz alta e ritmo ao vivo (22/10/2026).** Os dois pendentes de MELHORIAS 19.
+- **Terceiro tipo, `leitura`** ("Ler em voz alta"): o exercício de pausa da pesquisa (leitura ritmada a 4,5).
+  O texto vem da nota escolhida em "Mais opções" (`texto_da_nota`: a prosa de uma nota de `02-ESTUDO`, sem
+  frontmatter, títulos, listas, tabelas, código e links, até ~140 palavras, cortada no fim de frase; nota com
+  menos de 40 palavras de prosa cai no embutido) ou de `TEXTOS_LEITURA` (3 textos de ~85–90 palavras escritos
+  para isso, em rodízio pelo número de leituras já feitas). `com_barras` corta na pontuação, divide em partes
+  iguais o que passa de 8 palavras e junta o que tem menos de 5 ao vizinho se couber, nunca por cima de um
+  ponto final: nos 3 embutidos, 14, 13 e 14 barras, quase todas de 4 a 8 palavras. O manifesto guarda
+  `leitura {titulo, texto, trechos, fonte}`; alvo 4,5 sílabas/s e duração-alvo = sílabas do texto ÷ alvo (~35 s).
+  Na tela de partida, assunto e duração somem (o texto decide os dois) e uma linha diz "Pare de verdade em cada
+  barra". Na "Treinando", o texto com as barras em fonte 13 (com espaço inquebrável antes da barra, que nunca
+  começa linha). **Medida nova** (`pausas_nas_barras`): as palavras lidas são alinhadas às do texto (difflib,
+  sem acento nem pontuação) e, em cada barra cujas duas palavras vizinhas foram achadas em sequência, conta
+  pausa se o silêncio for ≥ 0,3 s (0,5 s real menos os ~0,2 s que o Whisper come); também `lidas_pct` e as
+  pausas ≥ 0,5 s longe das barras. Na tela, **Pausa nas barras** ("11 de 13") entra no lugar das muletas
+  (lendo, não há muleta; ela vai para os extras); ok com 70% ou mais (referência prática, sem norma). Sem
+  retorno do Claude: não há conteúdo a conferir. CLI: `treinar --tipo leitura [--nota X]` imprime o texto.
+- **Ritmo ao vivo** na "Treinando" (`ao_vivo.RitmoAoVivo`, só com GPU): a cada 5 s, o `small` (beam 1, com o
+  tempo de cada palavra, sem condicionar no texto anterior) transcreve os últimos 20 s do `mic.pcm` e a linha
+  discreta mostra "ritmo agora 5,3 sílabas/s" (mesma conta do ritmo: sílabas ÷ da 1ª à última palavra), em
+  vermelho só acima do alvo + 0,3; vazia até haver ≥ 8 palavras em ≥ 8 s.
+  **Medido em 22/10** em 30 janelas de 20 s da voz real do Pedro (canal do microfone da reunião de 05/10, numa
+  cópia), `small` contra o `large-v3-turbo` na mesma janela: diferença média **0,18 sílaba/s** (mediana 0,15,
+  p90 0,45, viés −0,06; 5 de 30 acima de 0,3), média do turbo 5,42. Custo: **2,3 s de GPU por estimativa**
+  (máx. 3,4 s) a cada 5 s, enquanto só o microfone grava. Serve de indicador; o número do resultado continua
+  sendo o do turbo no áudio inteiro. Fotos conferidas em 22/10 (partida da leitura, Treinando com o texto e o ritmo).
+
 **Limites conhecidos.**
 - O Whisper encurta a pausa em ~0,2 s (0,8 s real → 0,6 s medido): uma pausa real de 0,5–0,7 s
   pode não contar; pausa respiratória curta nunca conta.
 - A faixa de pausas (8 a 15/min) é heurística sem norma; leia junto com o ritmo e a comparação.
 - Em 3 min (~450 palavras) cada muleta pesa ~2 por mil: a meta vale como direção, não como prova.
 - Calibrado em voz sintética; falta o primeiro treino real do Pedro com o fone.
-- Sem indicador de ritmo ao vivo (ver MELHORIAS 19).
+- Ritmo ao vivo: ±0,45 sílaba/s em 1 de cada 10 janelas contra o turbo; não decide nada sozinho.
+- Pausa nas barras: limiar de 0,3 s e meta de 70% são palpite até os primeiros treinos reais; palavra lida
+  errada perto da barra tira aquela barra da conta (não vira erro).
 
 ---
 

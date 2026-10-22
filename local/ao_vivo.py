@@ -140,3 +140,77 @@ class AoVivo(threading.Thread):
             self._ciclo(final=True)
         except Exception:
             pass
+
+
+# ── ritmo ao vivo do treino (22/10/2026, MELHORIAS 19) ─────────────────────
+RITMO_JANELA_S = 20.0
+RITMO_PASSO_S = 5.0
+RITMO_MIN_PALAVRAS = 8
+
+
+def ritmo_da_janela(palavras, min_palavras=RITMO_MIN_PALAVRAS, min_span_s=8.0):
+    """Sílabas por segundo das palavras [{w, start, end}] de uma janela: a mesma conta do ritmo do treino
+    (da 1ª à última palavra, contando as pausas). None se houver pouca fala para dizer algo."""
+    import analise_fala as af
+    ws = [p for p in palavras if str(p["w"]).strip()]
+    if len(ws) < min_palavras:
+        return None
+    span = ws[-1]["end"] - ws[0]["start"]
+    if span < min_span_s:
+        return None
+    return round(af.silabas(" ".join(p["w"] for p in ws)) / span, 2)
+
+
+class RitmoAoVivo(threading.Thread):
+    """Na tela "Treinando": a cada RITMO_PASSO_S, transcreve os últimos RITMO_JANELA_S do mic.pcm com o
+    `small` na GPU (beam 1, com o tempo de cada palavra) e entrega {silabas_s, palavras}. Só com GPU: na
+    CPU disputaria o processador com a gravação. É indicador, não medida: o número do resultado é o do
+    turbo no áudio inteiro."""
+
+    def __init__(self, treino, cfg, entregar, modelo=None):
+        super().__init__(daemon=True, name="ritmo-ao-vivo")
+        self.t = treino
+        self.cfg = cfg
+        self.entregar = entregar
+        self.modelo = modelo
+        self._parar = threading.Event()
+        self.erro = None
+
+    def parar(self):
+        self._parar.set()
+
+    def passo(self):
+        pcm = self.t.mic_pcm
+        if not pcm.exists():
+            return None
+        n = pcm.stat().st_size // 2
+        ate = max(0, n - SR // 4)                       # o último 1/4 s pode estar sendo escrito
+        ini = max(0, ate - int(RITMO_JANELA_S * SR))
+        if ate - ini < SR * 8:
+            return None
+        with open(pcm, "rb") as f:
+            f.seek(ini * 2)
+            x = np.frombuffer(f.read((ate - ini) * 2), dtype="<i2").astype(np.float32) / 32768.0
+        segs, _ = self.modelo.transcribe(x, language=self.cfg.get("idioma", "pt"), vad_filter=True, beam_size=1,
+                                         word_timestamps=True, condition_on_previous_text=False)
+        palavras = [{"w": w.word, "start": w.start, "end": w.end} for s in segs for w in (s.words or [])]
+        r = ritmo_da_janela(palavras)
+        if r is None:
+            return None
+        out = {"silabas_s": r, "palavras": len(palavras)}
+        self.entregar(out)
+        return out
+
+    def run(self):
+        if self.modelo is None:
+            import transcribe
+            try:
+                self.modelo, _ = transcribe.carregar_modelo("small", "cuda", log=lambda *_: None)
+            except Exception as e:
+                self.erro = f"ritmo ao vivo desligado: sem GPU ({e})"[:200]
+                return
+        while not self._parar.wait(RITMO_PASSO_S):
+            try:
+                self.passo()
+            except Exception as e:
+                self.erro = f"{type(e).__name__}: {e}"[:200]
