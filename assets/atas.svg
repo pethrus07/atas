@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <rect x="10" y="10" width="236" height="236" rx="46" fill="#11131A" stroke="#A78BFA" stroke-width="9"/>
+  <!-- ondas de som -->
+  <path d="M62 102 a 66 66 0 0 0 0 52" fill="none" stroke="#7C5CE0" stroke-width="10" stroke-linecap="round"/>
+  <path d="M42 86 a 92 92 0 0 0 0 84" fill="none" stroke="#5B3FB8" stroke-width="10" stroke-linecap="round"/>
+  <path d="M194 102 a 66 66 0 0 1 0 52" fill="none" stroke="#7C5CE0" stroke-width="10" stroke-linecap="round"/>
+  <path d="M214 86 a 92 92 0 0 1 0 84" fill="none" stroke="#5B3FB8" stroke-width="10" stroke-linecap="round"/>
+  <!-- microfone -->
+  <rect x="100" y="48" width="56" height="104" rx="28" fill="#A78BFA"/>
+  <path d="M84 124 a 44 44 0 0 0 88 0" fill="none" stroke="#A78BFA" stroke-width="11" stroke-linecap="round"/>
+  <path d="M128 170 V 200" stroke="#A78BFA" stroke-width="11" stroke-linecap="round"/>
+  <path d="M100 204 H 156" stroke="#A78BFA" stroke-width="11" stroke-linecap="round"/>
+</svg>
