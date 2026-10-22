@@ -75,6 +75,23 @@ Lembrou depois? `marcar <id> 40:10 1:02:03` e `marcas <id>`; para a ata ler o tr
 `processar <id> --forcar estrutura`. Áudio do celular: `importar <arquivo> --marcas "12:30,40:10"`.
 O atalho muda em `marcar_atalho` no config (detalhe: [ARQUITETURA §20](docs/ARQUITETURA.md)).
 
+## Intervencionista (o Claude responde sozinho)
+Em **Mais opções**, marque **Intervencionista** (só aparece com GPU; liga o ao vivo junto). Vale só para
+aquela reunião: começa sempre desligado. Na gravação, a linha discreta **Intervencionista ligado** liga
+e desliga no meio da reunião (ligado no meio, só olha o que for dito dali em diante).
+
+Ele lê o `ao-vivo.md` a cada 5 s e só chama o Claude quando um filtro sem IA acha algo: **pergunta para
+você** (seu nome + "?", ou "você…?" logo antes de você falar; "você entendeu?" e "né?" no fim não contam),
+**card** (SUP-NNN ou frente rastreada), **valor/prazo** (R$, reais, "15 mil", "dia 10", "em 15 dias") ou
+**afirmação sobre um projeto** seu (nomes das notas de `03-PROJETOS` do Sinapse + `intervencionista.projetos`).
+Na daily, só pergunta e card/frente. O Claude lê memória, Sinapse, repositórios e atas anteriores (só
+leitura) e responde em até 2 linhas com a fonte, ou "não sei" (que não aparece na tela).
+
+A resposta chega num **cartão no canto inferior direito**, por cima de tudo, **sem tirar o foco** da
+chamada e sem som; some em 25 s ou com um clique. Teto: **20 chamadas por reunião**, uma por vez, no
+mínimo **45 s** entre elas (`intervencionista` no config). Tudo fica em `intervencoes.jsonl` na pasta da
+reunião (gatilho, trecho, resposta, fonte, custo), e o `/ata` confere. Detalhe: [ARQUITETURA §22](docs/ARQUITETURA.md).
+
 ## Reunião presencial (gravada no celular)
 Uma conversa sem chamada não passa pelo PC. Grave no celular e traga o arquivo:
 
@@ -123,7 +140,7 @@ Detalhe (o que mede, de onde vem cada régua, limites): [docs/ARQUITETURA.md §1
 ## Onde fica cada coisa
 Uma pasta por reunião em `atas-salvas/<data>_<hora>_<título>/`: `sessao.json` (contexto e
 etapas), `transcricao.json`, **`ata.json`** (a ata canônica), `ata.md`/`.html`/`.pdf`,
-`entregavel.pdf` (cliente) e `audio/*.opus`. Treinos em `atas-salvas/treinos/<id>/` (`treino.json`,
+`entregavel.pdf` (cliente), `audio/*.opus` e, se ligados, `ao-vivo.md` e `intervencoes.jsonl`. Treinos em `atas-salvas/treinos/<id>/` (`treino.json`,
 `resultado.md`/`.html`, `audio/mic.opus`) e o histórico deles em `fala-analise/treinos.jsonl`. Tudo fora do git.
 
 ## Linha de comando

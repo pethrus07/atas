@@ -23,6 +23,19 @@ import time
 import numpy as np
 
 SR = 16000
+_GPU = {}
+
+
+def gpu_disponivel():
+    """Há placa CUDA? (~0,5 s na primeira vez, por causa do import; depois vem do cache). É o que
+    decide se a janela oferece o intervencionista: sem GPU o ao vivo não roda (§12)."""
+    if "v" not in _GPU:
+        try:
+            import ctranslate2
+            _GPU["v"] = ctranslate2.get_cuda_device_count() > 0
+        except Exception:
+            _GPU["v"] = False
+    return _GPU["v"]
 
 
 class AoVivo(threading.Thread):

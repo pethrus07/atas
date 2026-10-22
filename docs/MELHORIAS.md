@@ -29,6 +29,7 @@ Valter, sessão `2026-10-05_2303_alinhamento-valter`), conferida item a item con
 | 19 | Modo treino: ensaio sozinho (reunião ou explicar tema), só o microfone, Raio-X de monólogo (ritmo, pausas, muletas, entonação) contra o alvo, o último treino e as reuniões, retorno do Claude auditado; fora do Raio-X das reuniões e do vault | ✅ 14/10 · ⏳ falta o primeiro treino real e o ritmo ao vivo | `treino.py`, `app.py::treino_*`, `ARQUITETURA.md` §19, `tests/test_treino.py` |
 | 20 | Marcar momento (ideia do Granola): Ctrl+Alt+M global ou botão durante a gravação → `marcas` no sessao.json; o Claude prioriza o trecho (45 s antes, 15 s depois); seção "Momentos marcados" auditada no topo da ata interna, fora do entregável; `marcar`/`marcas` no CLI, `importar --marcas` | ✅ 14/10 · ⏳ falta a primeira reunião real marcada ao vivo | `marcas.py`, `atalho.py`, `app.py::_ligar_atalho`, `ARQUITETURA.md` §20, `tests/test_marcas.py` |
 | 21 | Daily da Parresia: `formato daily` (formato por tipo), fora de toda medição com trava no ponto de escrita; ata `atas/daily@1` (com você, frentes rastreadas, por pessoa, card conferido a ±60 s, menção não tratada); quem falou sem digitar nomes (teto próprio + rodada); "Gravar a próxima daily"; `atas.py daily` | ✅ 19/10 · ⏳ não calibrado: falta a primeira daily de 1 h gravada de verdade | `daily.py`, `sessao.fora_da_medicao`, `ARQUITETURA.md` §21, `tests/test_daily.py` |
+| 22 | Ao vivo intervencionista: liga reunião a reunião (Mais opções, só com GPU; liga o ao vivo junto; liga/desliga no meio); filtro sem IA (pergunta para ele, card/frente, valor/prazo, projeto; daily só os dois primeiros); Claude só leitura, 2 linhas com fonte ou "não sei"; teto 20 e 45 s, uma por vez; cartão sem foco no canto; `intervencoes.jsonl` | ✅ 22/10 · ⏳ falta a primeira reunião real com ele ligado | `intervencionista.py`, `app.py::_ligar_interv`, `ARQUITETURA.md` §22, `tests/test_intervencionista.py` |
 | — | Worker v2 no ar (sem ele, nenhuma ata é publicada; a de 05/10 está parada) | ⏳ o login do wrangler virou a conta pessoal | `worker/` |
 | — | Marcar trechos fora de pauta | ⏳ parcial: o prompt tira de resumo e itens; falta marcar na transcrição interna | — |
 
@@ -176,21 +177,18 @@ curto (passo 1e). Detalhe, números e limites em `ARQUITETURA.md` §21.
 - A diarização da daily roda na CPU: ~835 s para 46 min de áudio (09/10), ou seja ~18 min a mais numa daily de
   1 h antes da ata sair.
 
-## 22. Ao vivo intervencionista (pedido de 21/10/2026) · 💡 proposta, não feito
+## 22. Ao vivo intervencionista (pedido de 21/10, feito em 22/10/2026) · ✅ · ⏳ não usado numa reunião real
 Feedback do Pedro depois de usar o ao vivo numa reunião, com o Claude lendo `ao-vivo.md` pelo chat: "muito muito
-bom". O pedido: um modo **intervencionista**, que fica ouvindo o tempo todo e traz a resposta **sem ele pedir**.
-Esboço para discutir antes de construir:
-- **Gatilho determinístico primeiro, IA depois:** um passo sem IA olha as falas novas e só chama o Claude quando
-  algo pede ajuda: pergunta dirigida ao Pedro ("Pedro, quanto…?", "você sabe se…"), número/valor/prazo dito,
-  card (`SUP-xxx`) ou frente rastreada citada, afirmação sobre um projeto dele que dá para conferir. Sem gatilho,
-  nada é chamado (custo e ruído).
-- **O Claude responde com contexto:** memória, Sinapse, repos e atas anteriores do mesmo projeto (o mesmo
-  acesso do /ata), em no máximo 2 linhas, com a fonte; "não sei" vale mais que chute (regra 3: nada inventado).
-- **Entrega discreta:** um cartão pequeno sempre visível no canto (sem roubar foco nem tocar som), que some
-  sozinho; histórico das intervenções na pasta da sessão para o /ata conferir depois. Nunca fala, nunca escreve
-  em nada fora da máquina, nunca vai ao cliente.
-- **Decidido em 21/10:** **o Pedro liga quando quiser, reunião a reunião** (mesmo esquema do ao vivo), desligado
-  por padrão — não há regra por tipo.
-- **Limites a decidir:** teto de chamadas por reunião (cota do plano) e atraso aceitável (o ao vivo usa modelo
-  pequeno na GPU a cada `ao_vivo_janela_s`).
-
+bom". O pedido: um modo que fica ouvindo o tempo todo e traz a resposta **sem ele pedir**. Decidido em 21/10: o
+Pedro liga reunião a reunião, desligado por padrão, em qualquer tipo.
+Feito: "Intervencionista" em "Mais opções" (só com GPU; liga o ao vivo junto) e uma linha discreta na gravação que
+liga/desliga no meio; filtro determinístico (pergunta dirigida a ele sem contar "você entendeu?", card/frente,
+valor/prazo, afirmação sobre projeto do Sinapse; na daily só os dois primeiros); `claude -p` só leitura (memória,
+Sinapse, repos, atas) com resposta de até 2 linhas e fonte, ou "não sei" (só no registro); teto `max_chamadas` 20,
+`intervalo_min_s` 45, uma chamada por vez; cartão sem foco no canto inferior direito que some em 25 s;
+`intervencoes.jsonl` na pasta da sessão, que o `/ata` lê. Medidas, regras e limites em `ARQUITETURA.md` §22.
+**Pendente:**
+- **Primeira reunião real** com ele ligado: ler o `intervencoes.jsonl` com o Pedro e calibrar o que foi útil.
+- **Teto**: no ao vivo de 19/10 (4h47 com o Valter) o filtro acharia 127 gatilhos e o teto de 20 acabaria em
+  ~1h58. Decidir com o uso se sobe o teto, aperta o filtro ou reserva chamadas para pergunta.
+- Atraso medido de ~40–60 s da fala ao cartão (janela do ao vivo + 7–10 s do Claude).

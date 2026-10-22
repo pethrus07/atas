@@ -9,7 +9,8 @@ Gravador de reunião do Pedro: grava no disco enquanto a reunião acontece, tran
 - `README.md` — uso diário, CLI, testes, montar do zero.
 - `docs/ARQUITETURA.md` — fonte da verdade: pipeline (§4), venvs (§5), falantes (§6), ata (§7),
   dados e retenção (§8), Worker (§10), **receitas (§11)**, /ata (§12), **armadilhas (§14)**,
-  Raio-X calibrado (§17), celular (§18), modo treino (§19), marcar momento (§20), daily (§21).
+  Raio-X calibrado (§17), celular (§18), modo treino (§19), marcar momento (§20), daily (§21),
+  intervencionista (§22).
   Não copiar daqui: ler lá.
 - `docs/MELHORIAS.md` — backlog e status por item. `docs/BRIEFING-V2.md` — requisitos R1–R9.
 - Skill `/ata`: `claude/skills/ata/SKILL.md` (junction em `~/.claude/skills/ata`).

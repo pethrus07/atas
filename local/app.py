@@ -145,6 +145,10 @@ class App(tk.Tk):
         st.configure("Link.TLabel", font=(base, 10, "underline"), foreground=CINZA)
         self.q = queue.Queue()
         self.s = self.g = self.av = None
+        self.iv = None                  # intervencionista (22/10/2026): liga reunião a reunião
+        self.cartao = None
+        self.gpu = None                 # None = ainda conferindo; o intervencionista só aparece com GPU
+        threading.Thread(target=self._conferir_gpu, daemon=True).start()
         self.gt = None                  # gravador do treino (separado: parar um treino nunca gera ata)
         self.analisando_treino = False
         self.processando = False
@@ -193,6 +197,16 @@ class App(tk.Tk):
                 "Nada se perde: na próxima abertura o Atas oferece terminar."):
             return
         self.destroy()
+
+    def _conferir_gpu(self):
+        import ao_vivo
+        ok = ao_vivo.gpu_disponivel()
+        self.q.put(lambda: self._gpu_conferida(ok))
+
+    def _gpu_conferida(self, ok):
+        self.gpu = ok
+        if ok and getattr(self, "_mostrar_interv", None):
+            self._mostrar_interv()
 
     def _link(self, pai, texto, comando):
         """Texto clicável, sem borda (regra do Pedro: borda só quando comunica estado)."""
@@ -299,12 +313,16 @@ class App(tk.Tk):
         self.v_projeto = tk.StringVar()
         self.v_claude = tk.BooleanVar(value=bool(self.cfg.get("estruturar", True)))
         self.v_ao_vivo = tk.BooleanVar(value=bool(self.cfg.get("ao_vivo")))
+        # intervencionista (22/10/2026): desligado por padrão, reunião a reunião (nunca vem do config)
+        self.v_interv = tk.BooleanVar(value=False)
         corpo, resumo = self._recolhivel(f, "Mais opções", "")
 
         def atualizar(*_):
             partes = [self.v_projeto.get().strip() or "sem projeto",
                       "ata pelo Claude" if self.v_claude.get() else "sem Claude"]
-            if self.v_ao_vivo.get():
+            if self.v_interv.get():
+                partes.append("ao vivo + intervencionista")
+            elif self.v_ao_vivo.get():
                 partes.append("ao vivo")
             resumo.configure(text=" · ".join(partes))
         todas = _sessao.listar()
@@ -325,8 +343,28 @@ class App(tk.Tk):
         cb.bind("<KeyRelease>", atualizar)
         ttk.Checkbutton(corpo, text="Gerar a ata com o Claude", variable=self.v_claude,
                         command=atualizar).pack(anchor="w")
+        def ao_vivo_mudou():
+            if not self.v_ao_vivo.get():
+                self.v_interv.set(False)         # sem ao vivo não há o que o intervencionista ler
+            atualizar()
+
+        def interv_mudou():
+            if self.v_interv.get():
+                self.v_ao_vivo.set(True)         # ligar o intervencionista liga o ao vivo junto
+            atualizar()
         ttk.Checkbutton(corpo, text="Transcrição ao vivo (o Claude acompanha a reunião)",
-                        variable=self.v_ao_vivo, command=atualizar).pack(anchor="w")
+                        variable=self.v_ao_vivo, command=ao_vivo_mudou).pack(anchor="w")
+        self.cb_interv = None
+
+        def mostrar_interv():
+            # só com GPU (sem ela o ao vivo não roda); a conferência leva ~0,5 s e chega pela fila
+            if self.cb_interv is None and corpo.winfo_exists():
+                self.cb_interv = ttk.Checkbutton(corpo, text="Intervencionista (responde sozinho num cartão)",
+                                                 variable=self.v_interv, command=interv_mudou)
+                self.cb_interv.pack(anchor="w")
+        self._mostrar_interv = mostrar_interv
+        if self.gpu:
+            mostrar_interv()
         atualizar()
 
         rod = ttk.Frame(f)
@@ -346,8 +384,9 @@ class App(tk.Tk):
                     "projeto": self.v_projeto.get().strip(),
                     "formato": formato_da_tela(self.v_tipo.get(), self.v_formato.get()),
                     "participantes": [p.strip() for p in self.v_part.get().split(",") if p.strip()]}
+        self.ctx["intervencionista"] = bool(self.v_interv.get() and self.gpu)
         self.cfg["estruturar"] = self.v_claude.get()
-        self.cfg["ao_vivo"] = self.v_ao_vivo.get()
+        self.cfg["ao_vivo"] = self.v_ao_vivo.get() or self.ctx["intervencionista"]
         self.b_gravar.configure(text="Preparando o áudio…", state="disabled")
         self._preparar_gravacao()
 
@@ -384,10 +423,11 @@ class App(tk.Tk):
         _log(f"gravando {self.s.id} · mic {disp['mic'].name} "
              f"({getattr(disp['mic'], 'via', 'soundcard')}) · loop "
              f"{disp['loop'].name if disp['loop'] else None}")
+        self.av = self.iv = None
         if self.cfg.get("ao_vivo"):
-            import ao_vivo
-            self.av = ao_vivo.AoVivo(self.s, self.cfg)
-            self.av.start()
+            self._ligar_ao_vivo()
+        if c.get("intervencionista"):
+            self._ligar_interv()
         f = self._limpar()
         self.l_rec = ttk.Label(f, text="● Gravando", style="Rec.TLabel")
         self.l_rec.pack(anchor="w")
@@ -410,6 +450,13 @@ class App(tk.Tk):
         self.avisos_disp = list(disp["avisos"])
         rod = ttk.Frame(f)
         rod.pack(side="bottom", fill="x")
+        # intervencionista (22/10/2026): uma linha discreta, só com GPU; o clique liga ou desliga
+        self.l_interv = None
+        if self.gpu:
+            self.l_interv = self._link(rod, "", self._alternar_interv)
+            self.l_interv.configure(style="Sub.TLabel", cursor="hand2")
+            self.l_interv.pack(anchor="w", pady=(0, _p(6)))
+            self._texto_interv()
         # marcar momento (14/10/2026): uma linha discreta acima do Parar; o contador só aparece
         # depois da primeira marca. Sem som nem popup: a call está em primeiro plano.
         linha = ttk.Frame(rod)
@@ -424,6 +471,71 @@ class App(tk.Tk):
                    command=self.parar).pack(fill="x")
         self._ligar_atalho()
         self._tique()
+
+    # ── ao vivo e intervencionista (22/10/2026) ─────────────────────────────
+    def _ligar_ao_vivo(self):
+        import ao_vivo
+        self.av = ao_vivo.AoVivo(self.s, self.cfg)
+        self.av.start()
+
+    def _ligar_interv(self, desde_t=0.0):
+        """Liga a thread que lê o ao-vivo.md e chama o Claude quando o filtro acha algo. Sem ao vivo
+        rodando, liga o ao vivo junto (ele começa do zero e transcreve o que já foi gravado; o
+        intervencionista só olha o que for dito a partir de agora: `desde_t`)."""
+        import intervencionista
+        if self.s is None or (self.iv is not None and self.iv.is_alive()):
+            return
+        if self.av is None:
+            self._ligar_ao_vivo()
+        self.iv = intervencionista.Intervencionista(
+            self.s, self.cfg, entregar=lambda item: self.q.put(lambda: self._mostrar_cartao(item)),
+            desde_t=desde_t)
+        self.iv.start()
+        _log(f"intervencionista ligado em {self.s.id} (desde {desde_t:.0f}s)")
+
+    def _desligar_interv(self):
+        iv, self.iv = self.iv, None
+        if iv is not None:
+            iv.parar()
+        if self.cartao is not None:
+            self.cartao.fechar()
+            self.cartao = None
+
+    def _alternar_interv(self):
+        if self.g is None:
+            return
+        if self.iv is not None:
+            self._desligar_interv()
+        else:
+            self._ligar_interv(desde_t=self.g.decorrido())
+        self._texto_interv()
+
+    def _texto_interv(self):
+        if getattr(self, "l_interv", None) is None:
+            return
+        iv = self.iv
+        if iv is None:
+            txt = "Intervencionista desligado"
+        else:
+            n = iv.respostas
+            txt = "Intervencionista ligado" + (f" · {n} resposta{'s' if n != 1 else ''}" if n else "")
+            if iv.ctl.teto():
+                txt += f" · teto de {iv.ctl.max} chamadas"
+        self.l_interv.configure(text=txt)
+
+    def _mostrar_cartao(self, item):
+        """Na thread do Tk. Um cartão por vez: o novo tira o anterior."""
+        import intervencionista
+        if self.g is None or self.iv is None:
+            return
+        if self.cartao is not None:
+            self.cartao.fechar()
+        try:
+            self.cartao = intervencionista.Cartao(self, item, segundos=float(
+                intervencionista.config(self.cfg)["cartao_s"]), escala=ESCALA)
+        except Exception:
+            _log(traceback.format_exc())
+        self._texto_interv()
 
     # ── marcar momento (14/10/2026) ─────────────────────────────────────────
     def _ligar_atalho(self):
@@ -501,6 +613,7 @@ class App(tk.Tk):
                                f"voltou por {_curto(c.trocas[-1][9:])}")
         if self.av is not None and self.av.erro:
             alertas.append(self.av.erro)
+        self._texto_interv()
         self.l_alerta.configure(text="\n".join(dict.fromkeys(alertas)))
         self.after(250, self._tique)
 
@@ -509,6 +622,7 @@ class App(tk.Tk):
         if g is None:
             return
         self._desligar_atalho()
+        self._desligar_interv()
         if self.av is not None:
             self.av.parar()
         g.parar()

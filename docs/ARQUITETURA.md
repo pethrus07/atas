@@ -77,6 +77,7 @@ atas/
 │   ├── upload.py              publicação no Worker (só cliente), senha, exclusão
 │   ├── pipeline.py            as etapas na ordem, idempotentes, registradas
 │   ├── ao_vivo.py             transcrição incremental durante a reunião (MVP, GPU)
+│   ├── intervencionista.py    lê o ao-vivo.md, filtro sem IA → Claude só leitura → cartão sem foco (§22)
 │   ├── analise_fala.py        Raio-X da fala + nota do Sinapse
 │   ├── legado.py              importa as atas soltas de antes da v2
 │   ├── celular.py             reunião presencial: arquivo do celular → sessão de um canal (§18)
@@ -277,6 +278,7 @@ que a auditoria não confere — só entram quando todos os falantes relevantes 
 | `atas-salvas/<id>/audio/*.opus` | áudio compactado (~12 MB/100 min/canal) | **`audio_reter_dias` = 30**, depois apagado | não |
 | `atas-salvas/<id>/transcricao.json`, `ata.json`, `ata.*`, `entregavel.*` | transcrição, ata e renderizações | sempre (local) | não |
 | `atas-salvas/<id>/ao-vivo.md` | transcrição preliminar, se ligada | sempre (local) | não |
+| `atas-salvas/<id>/intervencoes.jsonl` | intervencionista: gatilho, trecho, resposta, fonte, custo (§22) | sempre (local) | não |
 | D1 `reunioes` (Worker) | **só cliente**: HTML do entregável, hash da senha, expiração | **`publicacao_reter_dias` = 90** (cron diário) | não |
 | D1 — linhas da v1 | segments + resumo das atas antigas (26 das 27 têm link no backup .md) | **sem prazo** até alguém decidir (§14) | não |
 | `fala-analise/` | histórico e painel do Raio-X (com títulos) | sempre (local) | não |
@@ -312,6 +314,7 @@ obrigatória para gravar.**
 | `audio_reter_dias` | `30` | retenção do áudio local |
 | `publicacao_reter_dias` | `90` | expiração da página do cliente |
 | `ao_vivo`, `ao_vivo_janela_s` | `false`, `30` | §12 |
+| `intervencionista` | `{"max_chamadas": 20, "intervalo_min_s": 45}` | limites do intervencionista (§22); ligar é na janela, reunião a reunião. Também: `projetos`, `nomes`, `modelo`, `esforco` (`low`), `cartao_s` (25), `timeout_s` (120), `validade_s` (90), `repetir_s` (300), `mostrar_nao_sei` |
 | `marcar_atalho` | `ctrl+alt+m` | atalho global do "marcar momento" (§20); modificadores ctrl/alt/shift/win + letra, dígito ou F1–F24 |
 | `marcar_som` | `false` | bipe discreto do Windows a cada marca (§20) |
 | `daily_equipe` | 11 nomes (09/10 + memórias) | universo de nomes da rodada e vocabulário do Whisper na daily; o Pedro completa (§21) |
@@ -424,6 +427,9 @@ token do Pedro, nunca pelo MCP). Nada é publicado sem o sim dele, na hora.
 o áudio novo dos dois `.pcm` com o `small` na GPU e acrescenta as falas em `ao-vivo.md`.
 `atas.py ao-vivo` dá o caminho, e o Claude lê durante a reunião. Sem GPU fica desligado (na CPU
 disputaria processador com a chamada). Não substitui a transcrição final.
+
+**Intervencionista** (§22): com ele ligado, uma thread lê as falas novas do `ao-vivo.md` e, quando um
+filtro sem IA acha algo, chama o Claude sozinha e mostra a resposta num cartão.
 
 ---
 
@@ -1031,3 +1037,94 @@ do vault conferidos por **hash antes e depois: iguais**. Nada publicado.
   apelidos usados (ex.: "Lena").
 - Um nome digitado na daily não é a contagem: com 1 informado o teto decide; com 2+ o número é cravado
   mesmo que esteja incompleto (é o que o Pedro digitou).
+
+---
+
+## 22 · Ao vivo intervencionista (22/10/2026)
+
+Pedido do Pedro depois de usar o ao vivo numa reunião com o Claude lendo o `ao-vivo.md` pelo chat ("muito
+muito bom"): um modo que fica ouvindo e traz a resposta **sem ele pedir**. Decisão de 21/10: ele liga
+**reunião a reunião** (como o ao vivo), **desligado por padrão**, em qualquer tipo. Código em
+`local/intervencionista.py`, a janela em `app.py::_ligar_interv/_alternar_interv/_mostrar_cartao`, testes
+em `tests/test_intervencionista.py`.
+
+```
+ao-vivo.md (o ao vivo escreve a cada ao_vivo_janela_s)
+  → thread "intervencionista": lê só as linhas inteiras novas, a cada leitura_s (5 s)
+  → filtro determinístico, sem IA (abaixo); sem gatilho, nada é chamado
+  → Controle: teto por reunião, intervalo mínimo, uma chamada por vez, fila de um, sem repetir a chave
+  → claude -p --tools Read,Grep,Glob (cwd ~/Projetos, --add-dir memória, --json-schema {sabe, resposta, fonte},
+    --effort low) → limpar_resposta (regra 3) → intervencoes.jsonl → cartão (só se sabe)
+```
+
+**Na janela.** Em "Mais opções", **Intervencionista (responde sozinho num cartão)**, só se houver GPU
+(`ao_vivo.gpu_disponivel`, `ctranslate2.get_cuda_device_count`, ~0,5 s numa thread ao abrir; o checkbox
+aparece quando a conferência chega). Marcar liga o ao vivo junto; desmarcar o ao vivo desmarca ele. Nunca
+vem do config: começa sempre desligado. Na gravação, uma linha discreta (só com GPU) "Intervencionista
+ligado · N respostas" / "desligado"; o clique liga ou desliga no meio. Ligado no meio sem ao vivo, liga o ao
+vivo (que transcreve do começo) e o intervencionista só considera falas a partir daquele instante (`desde_t`).
+Fotos conferidas em 22/10 (partida com Mais opções aberto, gravação e cartão), contra a regra de UI.
+
+**O filtro** (`gatilhos`). No ao vivo os rótulos são só "Você" (o Pedro) e "Participante".
+
+| Gatilho | Dispara | Não dispara |
+|---|---|---|
+| pergunta | fala do outro lado com uma frase terminada em "?" que tem o nome dele (`meu_nome` + `intervencionista.nomes`), ou que tem "você/vc/cê/tu/te" **e** a fala seguinte (até 30 s) é do Pedro; sem fala seguinte ainda, fica pendente para a próxima leitura | tique de confirmação no fim ("…, você entendeu?", "né?", "tá?", "certo?", "beleza?", inclusive "…, você entendeu, Pedro?"); "por que eu te digo isso?"; pergunta do próprio Pedro |
+| card | `SUP-NNN` em qualquer reunião; card ou palavra de `frentes_rastreadas` (a lista da daily) | — |
+| valor | R$, reais/conto/pila, "N mil"; prazo de `ata.expressao_de_prazo` menos "hoje/amanhã"; número ≥ 2 dígitos com palavra de valor/prazo a até ~40 caracteres (valor, preço, custa, pagar, parcela, mensalidade, orçamento, por hora, horas, dias, semanas, meses, prazo, entrega, desconto) | "4G", "2 filhos", "2024", porcentagem sozinha ("100% local"), "toda hora" |
+| projeto | fala com ≥ 6 palavras que cita um nome de projeto/cliente **e** tem marcador de fato (já, ainda, tá, ficou, foi, vai, funciona, pronto, publicado, no ar, entregue, falta, parou, erro…) | menção solta; nomes de pessoa (participantes, o Pedro) nunca são nome de projeto |
+
+Nomes de projeto (`nomes_de_projeto`): `intervencionista.projetos` + o H1 e o nome do arquivo de cada nota de
+`03-PROJETOS` do Sinapse (sem históricos e MOC); "Ware IoT (ex-Celiware IHM) — IHM portátil" vira "Ware IoT",
+"Celiware IHM". Hoje: 79 nomes. **Daily:** só pergunta e card/frente.
+
+**Limites e ordem** (`Controle`). `max_chamadas` 20 por reunião; `intervalo_min_s` 45 entre o início de uma
+chamada e o da próxima; a thread espera a resposta antes de ler de novo (nunca duas ao mesmo tempo); a fila
+guarda **um** gatilho, o mais importante (pergunta > card > valor > projeto; empate = o mais novo), e o
+descarta se ficar mais de `validade_s` (90 s de reunião) para trás; a mesma chave (o mesmo card, valor ou
+projeto) não chama de novo antes de `repetir_s` (300 s). No teto, uma linha `{"evento": "teto"}` no registro.
+
+**A chamada.** O prompt leva título, tipo, projeto e participantes, as falas dos últimos 2 min (até 25) e o
+motivo do gatilho; pede no máximo 2 linhas (até 200 caracteres) com o fato que ele precisa para responder ou
+conferir, e a fonte; "não sei" se não achar em poucas leituras; nada de resumo, conselho genérico ou frase
+para ele falar. **Regra 3 no código** (`limpar_resposta`): "sabe" sem fonte vira "não sei"; resposta cortada em
+2 linhas / 240 caracteres; a fonte que cita arquivo é conferida no disco (`fonte_conferida`: o cartão diz
+"fonte não conferida" se o arquivo não existe). "Não sei" e erro (timeout de 120 s, sem JSON) vão só para o
+registro (`mostrar_nao_sei: false`). O processo do Claude é morto ao parar a gravação.
+
+**O cartão** (`Cartao`). `Toplevel` sem moldura, fundo #1C1C1C, cabeçalho "Pergunta para você · 12:31", a
+resposta e a fonte em cinza; canto inferior direito da área útil do monitor principal (`SPI_GETWORKAREA`),
+`-topmost`, com `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW` antes de aparecer: o Windows não ativa a janela nem ao
+mostrar nem ao clicar, e ela não vai para a barra de tarefas. Um por vez (o novo tira o anterior); some em
+`cartao_s` (25 s) ou com um clique. Sem som. Nunca fala nem envia nada para fora.
+
+**O registro** (`intervencoes.jsonl`, na pasta da sessão): `{evento: "intervencao", em, t, t_s, gatilho,
+motivo, rotulo, trecho, chamada, sabe, resposta, fonte, fonte_conferida, segundos, custo_usd, modelo, mostrado}`
+(ou `erro`), e `{evento: "teto", …}`. O `/ata` lê (`intervencionista.ler_registro`) e confere as respostas
+dadas ao vivo contra a ata.
+
+**Medido em 22/10/2026.**
+- **Filtro nos dois `ao-vivo.md` reais** (só leitura, sem Claude, simulando a leitura no tempo da reunião):
+  19/10 com o Valter (4h47, 4.240 falas): na 1ª versão do filtro, **217 gatilhos**, 133 "perguntas" — a
+  maioria "você entendeu?"; com o tique, a porcentagem sozinha, "toda hora" e a pergunta retórica fora:
+  **127** (68 valor, 55 pergunta, 4 projeto). Com teto 20 e intervalo 45 s, **o teto acaba em ~1h58** (18
+  perguntas, 2 valores). 21/10 com o Mauro (55 min, 227 falas): **6 gatilhos, 2 chamadas**.
+- **Claude real** (falas sintéticas, `claude_modelo` padrão = Opus): "Pedro, quanto ficou combinado de pagar
+  quando o app entrar na loja?" → "R$ 450 pela publicação … + R$ 150 da Tex quando a 1.5.0 entrar na loja",
+  fonte `memory/iot-ihm-portatil-valter.md` (conferida), **9,6 s, US$ 0,14**; "o sistema da retífica tem fila
+  de peças por cliente?" → fila por mecânico/bancada, não por cliente, fonte `memory/retifica-os-toninho.md`,
+  **7,2 s, US$ 0,10**. Somando o atraso do ao vivo (até 30 s de janela + transcrição), a resposta chega
+  ~40–60 s depois da fala. 20 chamadas ≈ US$ 2–3 de custo de lista por reunião.
+- **Cartão**: teste com Tk real — `WS_EX_NOACTIVATE` e `-topmost` ligados, a janela em primeiro plano continua
+  a mesma, some sozinho e com um clique.
+
+**Limites conhecidos.**
+- **Não usado numa reunião real ainda.** O filtro foi medido em transcrição real, mas o que é "útil" só o Pedro
+  diz: calibrar teto, intervalo e gatilhos com o `intervencoes.jsonl` das primeiras reuniões.
+- Numa reunião longa e conversada como a de 19/10, o teto de 20 acaba antes da metade; perguntas do Valter
+  dominam. Subir o teto custa cota; filtrar mais pode perder a pergunta que importa.
+- Atraso de 40–60 s: serve para "já que você perguntou, deixa eu ver…", não para resposta instantânea.
+- Heurística de "você": pergunta seguida de outra fala do Participante não dispara, mesmo que fosse com ele;
+  sem separação de vozes no ao vivo, "Participante" pode ser qualquer um do outro lado.
+- A fonte é conferida por existência do arquivo, não pelo conteúdo: o fato pode estar errado no arquivo certo.
+- O cartão vai para o monitor principal (o do notebook), não necessariamente o da chamada.

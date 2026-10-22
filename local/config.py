@@ -41,6 +41,9 @@ PADROES = {
     # ao vivo (R9)
     "ao_vivo": False,
     "ao_vivo_janela_s": 30,
+    # intervencionista (22/10/2026, ARQUITETURA §22): ligado na janela, reunião a reunião (nunca daqui).
+    # Estes são só os limites; o resto dos padrões está em intervencionista.PADRAO.
+    "intervencionista": {"max_chamadas": 20, "intervalo_min_s": 45},
     # daily da Parresia (19/10/2026, docs/ARQUITETURA.md §21): fora de toda medição; quem falou sai
     # da diarização com parâmetros próprios + a rodada ("Rogério, e você?"), sem digitar nomes.
     # A equipe é o universo de nomes da rodada e entra como vocabulário do Whisper. Lista inicial

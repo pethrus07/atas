@@ -21,6 +21,7 @@
 
   "ao_vivo": false,
   "ao_vivo_janela_s": 30,
+  "intervencionista": {"max_chamadas": 20, "intervalo_min_s": 45, "projetos": [], "nomes": []},
   "marcar_atalho": "ctrl+alt+m",
   "marcar_som": false,
 
