@@ -222,6 +222,8 @@ separação de participantes delas é ruim (um participante virou dezenas de ró
 Se o Pedro ligou "Transcrição ao vivo", `ao-vivo` devolve o caminho do `ao-vivo.md` da
 gravação em curso. Leia as últimas linhas para responder o que ele perguntar. É
 transcrição preliminar, sem separar participantes; a ata final é refeita do zero.
+Uma linha `[mm:ss] ★ MARCA` é o Pedro apertando Ctrl+Alt+M naquele instante: olhe as falas logo antes
+(ele aperta depois de ouvir) — é o que ele achou importante.
 
 Se o intervencionista estava ligado (ARQUITETURA §22), a pasta tem `intervencoes.jsonl`: cada resposta
 que apareceu no cartão (gatilho, trecho, resposta, fonte, custo). Ao fechar a ata, confira as respostas

@@ -312,3 +312,65 @@ def test_atalho_de_verdade_grava_a_marca(raiz):
         a.parar()
     mk = Sessao.abrir(s.pasta).m.get("marcas")
     assert mk and mk[0]["origem"] == "atalho" and 0 < mk[0]["t"] < 5 and a.disparos == 1
+
+
+# ── marca no ao-vivo.md (22/10/2026) ────────────────────────────────────────
+class _Seg:
+    def __init__(self, start, text):
+        self.start, self.text = start, text
+
+
+class _ModeloFalso:
+    """Devolve falas fixas por canal na primeira passada; nada depois."""
+
+    def __init__(self, por_canal):
+        self.por_canal = list(por_canal)
+
+    def transcribe(self, x, **kw):
+        return ([_Seg(a, b) for a, b in self.por_canal.pop(0)] if self.por_canal else []), None
+
+
+def _pcm(caminho, segundos):
+    with open(caminho, "ab") as f:
+        f.write(b"\x00\x00" * int(16000 * segundos))
+
+
+def test_marca_entra_no_ao_vivo_no_ponto_certo(raiz):
+    import ao_vivo
+    s = _sessao(raiz)
+    _pcm(s.mic_pcm, 20)
+    _pcm(s.loop_pcm, 20)
+    av = ao_vivo.AoVivo(s, {})
+    av.modelo = _ModeloFalso([[(1.0, "um"), (12.0, "dois")], [(6.0, "três")]])
+    av.marcar(8.0)
+    av.marcar(25.0)                          # o áudio deste instante ainda não foi transcrito
+    av._ciclo()
+    linhas = s.caminho("ao-vivo.md").read_text(encoding="utf-8").splitlines()
+    assert linhas == ["[00:01] Você: um", "[00:06] Participante: três", "[00:08] ★ MARCA", "[00:12] Você: dois"]
+    assert av.falas == 3
+    _pcm(s.mic_pcm, 10)
+    _pcm(s.loop_pcm, 10)
+    av._ciclo(final=True)                    # no fechamento, a marca que sobrou entra
+    assert s.caminho("ao-vivo.md").read_text(encoding="utf-8").splitlines()[-1] == "[00:25] ★ MARCA"
+
+
+def test_a_marca_da_janela_vai_para_o_ao_vivo(raiz):
+    import app
+    s = _sessao(raiz)
+    recebidas = []
+
+    class Rot:
+        def configure(self, **kw):
+            pass
+
+    class AV:
+        def marcar(self, t):
+            recebidas.append(t)
+
+    class Falso:
+        g, cfg, av, l_marcas = object(), {}, AV(), Rot()
+    f = Falso()
+    f.s = s
+    app.App._marcar(f, 750.2, "atalho")
+    app.App._marcar(f, 751.0, "atalho")     # repique: não duplica no ao vivo
+    assert recebidas == [750.2] and [m["t"] for m in marcas.lista(s)] == [750.2]

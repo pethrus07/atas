@@ -65,7 +65,8 @@ Os números do teto da daily (`daily_diar`) são **palpite** até calibrar numa 
 Ouviu algo que importa (um valor, um prazo, um "fechado")? Aperte **Ctrl+Alt+M**: funciona com o
 Meet/Chrome na frente, sem trazer a janela do Atas. Ou clique **Marcar momento** na tela de gravação.
 Sem som e sem popup; a tela (e o título na barra de tarefas) mostra "N momentos marcados". Apertar de
-novo em até 2 s conta como a mesma marca.
+novo em até 2 s conta como a mesma marca. Com a transcrição ao vivo ligada, a marca aparece no
+`ao-vivo.md` como `[mm:ss] ★ MARCA`, entre as falas (em até ~30 s), para o Claude que acompanha ver.
 
 Na ata **interna**, a seção **Momentos marcados** vem no topo: para cada marca, o horário (clique leva
 ao trecho na transcrição), o que foi dito de importante e a fala literal que sustenta; o trecho

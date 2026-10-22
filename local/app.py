@@ -572,6 +572,8 @@ class App(tk.Tk):
             _log(traceback.format_exc())
             self.s.salvar()                  # a marca já está em s.m; só falta o disco
             nova = True
+        if nova is not None and self.av is not None:
+            self.av.marcar(t)                # `[mm:ss] ★ MARCA` no ao-vivo.md, para o Claude que acompanha
         if nova is not None and self.cfg.get("marcar_som"):
             try:
                 import winsound

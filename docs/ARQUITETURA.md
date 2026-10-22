@@ -867,6 +867,14 @@ mostra as marcas, como "trecho ainda não lido pelo Claude". Marca acrescentada 
 (`marcar`) entra como pendente no `render`/`processar` (`sincronizar_momentos` mantém o que já foi
 analisado, casado pelo instante); `processar <id> --forcar estrutura` lê o trecho.
 
+**No ao vivo** (22/10/2026). Com a transcrição ao vivo ligada, cada marca nova também vira uma linha
+`[mm:ss] ★ MARCA` no `ao-vivo.md`, para o Claude que acompanha pelo chat ver onde o Pedro apertou. Ela
+não é escrita na hora: `AoVivo.marcar(t)` guarda o instante e o ciclo seguinte a escreve **no lote em que
+os dois canais já cobriram aquele instante**, ordenada com as falas (escrever na hora poria a marca antes
+das falas dos ~30 s anteriores, que ainda não foram transcritas). No fechamento, a que sobrou entra. Atraso:
+até uma janela do ao vivo (`ao_vivo_janela_s`, 30 s). O intervencionista (§22) ignora a linha. Teste:
+`tests/test_marcas.py::test_marca_entra_no_ao_vivo_no_ponto_certo`.
+
 **Render.** Ata interna (`.md`, `.html`, `.pdf`): seção **Momentos marcados** no topo, antes das
 decisões; o horário é link para a fala do começo do trecho na transcrição (um script de 1 linha abre o
 `<details>` antes de pular). Entregável do cliente: nada de marca, nem âncora; os "trechos citados"
@@ -898,7 +906,7 @@ liberado) e conferida contra a regra de UI.
   citação escolhida sustenta o escopo do piloto, não o valor; o valor está no V14, que tem citação própria.
 - Precisão do instante ~1 s (relógio do gravador × PCM alinhado); a janela de 45 s cobre. Se ele
   apertar mais de 45 s depois do que ouviu, o trecho não pega: marque com `atas.py marcar` no horário certo.
-- Um tipo só de marca e sem rótulo; marca não aparece no `ao-vivo.md`.
+- Um tipo só de marca e sem rótulo.
 - O atalho é global só durante a gravação; o Ctrl+Alt+M fica indisponível para outros programas nesse
   tempo (Word: comentário). Falta a primeira reunião real marcada ao vivo.
 

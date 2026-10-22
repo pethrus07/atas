@@ -50,6 +50,22 @@ class AoVivo(threading.Thread):
         self.modelo = None
         self.erro = None
         self.falas = 0
+        self._marcas = []                       # instantes (s) do Ctrl+Alt+M ainda não escritos
+        self._trava = threading.Lock()
+
+    def marcar(self, t):
+        """Marca de momento (Ctrl+Alt+M, 22/10/2026): vira `[mm:ss] ★ MARCA` no ao-vivo.md, no PONTO
+        CERTO — junto do lote em que o áudio daquele instante foi transcrito, ordenada com as falas.
+        Escrever na hora poria a marca antes de falas que a precederam (o áudio delas ainda não foi
+        transcrito). Chamado da thread do Tk."""
+        with self._trava:
+            self._marcas.append(float(t))
+
+    def _marcas_ate(self, coberto):
+        with self._trava:
+            prontas = [t for t in self._marcas if t <= coberto]
+            self._marcas = [t for t in self._marcas if t > coberto]
+        return prontas
 
     def parar(self):
         self._parar.set()
@@ -86,12 +102,20 @@ class AoVivo(threading.Thread):
                 t = sg.text.strip()
                 if t:
                     linhas.append((ini / SR + sg.start, rotulo, t))
-        if linhas:
-            linhas.sort()
+        # as marcas cujo instante os canais já cobriram entram neste lote, na ordem do tempo
+        canais = [n for n, pcm in (("mic", self.s.mic_pcm), ("loop", self.s.loop_pcm)) if pcm.exists()]
+        coberto = float("inf") if final else (min(self.offsets[n] for n in canais) / SR if canais else 0.0)
+        marcas = [(t0, "★", None) for t0 in self._marcas_ate(coberto)]
+        if linhas or marcas:
+            n_falas = len(linhas)
+            linhas = sorted(linhas + marcas, key=lambda x: (x[0], x[1] != "★"))
             with open(self.s.caminho("ao-vivo.md"), "a", encoding="utf-8") as f:
                 for t0, rot, txt in linhas:
-                    f.write(f"[{_ata.fmt_t(t0)}] {rot}: {txt}\n")
-            self.falas += len(linhas)
+                    if rot == "★":
+                        f.write(f"[{_ata.fmt_t(t0)}] ★ MARCA\n")
+                    else:
+                        f.write(f"[{_ata.fmt_t(t0)}] {rot}: {txt}\n")
+            self.falas += n_falas
 
     def run(self):
         import transcribe
