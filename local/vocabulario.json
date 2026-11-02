@@ -1,17 +1,30 @@
 {
-  "_para_que": "Termos que o Whisper recebe como hotwords, por tipo e por projeto (transcribe.vocabulario). Os participantes informados na partida entram sozinhos. Mantenha curto: o limite é 40 termos por reunião.",
-  "sempre": ["Claude", "Sinapse", "GitHub"],
-  "parresia": ["Parresia", "Orbe", "Lumen", "Vértice", "Prisma", "Quadrante", "ClickUp", "PostHog", "MainWP", "Mauro", "Otávio", "Davi", "Caio", "Vinícius", "Augusto", "backlog", "sprint", "staging", "homologação", "DoR", "DoD", "SUP"],
-  "cliente": ["RYZE"],
-  "carreira": ["Product Owner", "PO", "Mauro"],
+  "_para_que": "Exemplo do formato. Termos que o Whisper recebe como hotwords, por tipo e por projeto (transcribe.vocabulario). O vocabulário real fica em local/vocabulario.local.json, fora do git; se ele existir, é ele que vale. Os participantes informados na partida entram sozinhos. Mantenha curto: o limite é 40 termos por reunião.",
+  "sempre": [
+    "Claude",
+    "GitHub"
+  ],
+  "parresia": [
+    "backlog",
+    "sprint",
+    "staging",
+    "homologação",
+    "DoR",
+    "DoD"
+  ],
+  "cliente": [
+    "RYZE"
+  ],
+  "carreira": [
+    "Product Owner",
+    "PO"
+  ],
   "pessoal": [],
   "projetos": {
-    "instituto-automacao": ["Valter", "Instituto Automação", "Celiware", "Giro"],
-    "commagente": ["Valter", "Commagente", "WhatsApp"],
-    "celiware-ihm": ["Valter", "Celiware", "IHM", "APK"],
-    "pdq-cheesebites": ["Valter", "Cheese Bites", "PDQ"],
-    "desbravando": ["Desbravando", "UTV", "Wix"],
-    "retifica": ["Toninho", "Augusto", "retífica", "OS"],
-    "bailado-da-sanfona": ["Heitor", "Balaio", "forró", "fole de oito baixos", "UFPB"]
+    "projeto-exemplo": [
+      "Nome do cliente",
+      "Nome do produto",
+      "sigla"
+    ]
   }
 }

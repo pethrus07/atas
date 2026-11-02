@@ -541,7 +541,7 @@ filtro sem IA acha algo, chama o Claude sozinha e mostra a resposta num cartão.
 
 ## 15 · v2.1 — análises (06/10/2026)
 
-Nasceu da primeira reunião longa real (3h09 com o Valter). O backlog completo, item a item, está
+Nasceu da primeira reunião longa real (3h09 com o cliente). O backlog completo, item a item, está
 em `docs/MELHORIAS.md`. Em uma linha cada:
 
 - **Publicação:** `render`, `falantes` e `confirmar` só **atualizam** uma página que já está no ar
@@ -933,7 +933,7 @@ continuam saindo só das listas. O `/ata` começa pelas marcas (passo 1a da skil
 com a janela pelo `sessao.json`; recusa horário depois do fim), `marcas <id>`, `importar <arq>
 --marcas "12:30,40:10"`. `ATAS_SALVAS=<pasta>` aponta o CLI para uma **cópia** das reuniões (ensaio).
 
-**Medido em 14/10/2026 numa cópia da reunião de 05/10 com o Valter** (190 min, `ATAS_SALVAS` em pasta
+**Medido em 14/10/2026 numa cópia da reunião de 05/10 com o cliente** (190 min, `ATAS_SALVAS` em pasta
 temporária, `SINAPSE_VAULT` vazio; a original conferida por hash antes/depois, nada publicado). Três
 marcas por `atas.py marcar`: 46:10 (conversa política), 1:14:50 (logo depois do "300" do piloto) e
 2:36:10 (logo depois do "600 quando subir" e do "10 a 15 dias"). Em blocos, as duas primeiras foram ao
@@ -964,9 +964,9 @@ liberado) e conferida contra a regra de UI.
 ## 21 · Daily da Parresia (19/10/2026)
 
 Pedido do Pedro: dailies da Parresia, internas, **mais de 1 h**, normalmente **7 ou mais pessoas** (o
-número varia), uma rodada em que o Otávio chama cada um pelo nome. Ele fala pouco (daily de 09/10:
+número varia), uma rodada em que o coordenador chama cada um pelo nome. Ele fala pouco (daily de 09/10:
 fatia 8,9%, 582 palavras). Quer gravar para achar depois **quem disse o quê sobre qual card** (em 19/10
-uma informação do Rogério sobre o SUP-953 só existia numa daily não gravada). Tem **duas dailies
+uma informação de um colega sobre o SUP-953 só existia numa daily não gravada). Tem **duas dailies
 seguidas** e **não quer digitar participante nome a nome**. Código em `local/daily.py` (ata, rodada,
 frentes, card, busca), `estruturar.py` (esquema e prompt), `render.py` (`*_daily`), `sessao.py`
 (`FORMATOS`, `fora_da_medicao`); testes em `tests/test_daily.py`.
@@ -1013,8 +1013,8 @@ estrutura`. Ensaio em cópia: `ATAS_SALVAS` + `ATAS_FALA` (pasta do histórico) 
 ### Quem falou, sem digitar nomes
 
 - **Nunca o atalho de 1 remoto** na daily (`ata.participantes_iniciais(daily=True)` e
-  `transcribe.transcrever_sessao`): em 09/10 só "mauro" foi digitado e 34 min de 7 pessoas viraram
-  Mauro, confirmado. Na daily, 0 ou 1 informado = limiar + teto; 2 ou mais = número cravado (respeitado).
+  `transcribe.transcrever_sessao`): em 09/10 só um nome foi digitado e 34 min de 7 pessoas viraram
+  essa pessoa, confirmada. Na daily, 0 ou 1 informado = limiar + teto; 2 ou mais = número cravado (respeitado).
 - **Teto da daily** (`daily_diar`): até **12** vozes, grupo com ≥ **1,5%** da fala e ≥ **15 s** (a reunião
   normal exige 5% e 20 s, o que apagaria quem fala 1 min numa daily de 1 h com 8 pessoas). `diarize.py`
   ganhou `fatia_min`/`min_seg` (argumentos 6 e 7 da linha de comando); sem eles a linha de comando e o
@@ -1022,7 +1022,7 @@ estrutura`. Ensaio em cópia: `ATAS_SALVAS` + `ATAS_FALA` (pasta do histórico) 
   `atas.py calibrar <id> --daily` numa daily real de 1 h com a contagem de pessoas conhecida.
 - **Equipe** (`daily_equipe`): o universo de nomes da rodada e o vocabulário do Whisper na daily (vem
   antes dos outros termos: o limite de 40 não a corta). Lista inicial da daily de 09/10 (43:53, a lista de
-  contas do Vértice Suite) e das memórias; o Pedro completa uma vez no `config.json`.
+  contas de um produto) e das memórias; o Pedro completa uma vez no `config.json`.
 - **Rodada como evidência** (`daily.rodada`): um trecho com vocativo de um nome da equipe ("Rogério, e
   você?", "fala, Rogério", "e aí, Téo", "Rogério?" — mas não "falou com o Rogério?") seguido, em até
   **10 s**, de **outro** rótulo começando a falar propõe `rótulo → nome`, com a evidência
@@ -1080,13 +1080,13 @@ do vault conferidos por **hash antes e depois: iguais**. Nada publicado.
    isso que a calibragem numa daily real vai dizer.
 3. Claude (daily-1): **120 s, US$ 0,50**, 38.818 caracteres. 4 pessoas, 28 itens, 9 "com você", 4 decisões,
    9 encaminhamentos: **50 itens auditados, 0 sem origem, 0 card removido**. Nomes deduzidos pelo texto
-   (a confirmar): Otávio, Mauro, Davi, Augusto.
+   (a confirmar): quatro nomes da equipe.
 4. Rodada: a 09/10 **não é uma daily de rodada** (é a apresentação do método); o código achou **2
    pistas** — `Participante 1 → Augusto?` ("Ó, aí, Augusto, me fala…" → outro rótulo em 8 s) e
    `Participante 5 → Téo?` ("Aí o Téo, como é que tá a situação aí?") —, e a primeira **discorda** do nome
-   que a ata deduziu (Otávio): virou lacuna "a rodada aponta…". Não dá para medir o acerto aqui.
+   que a ata deduziu: virou lacuna "a rodada aponta…". Não dá para medir o acerto aqui.
 5. Frentes: **0 menções a SUP-95x** (a frota não foi assunto em 09/10; "WordPress" ali é o plugin de
-   eventos, fora das palavras da frente). `atas.py daily Vértice` achou 4 menções com quem/card/trecho.
+   eventos, fora das palavras da frente). `atas.py daily <produto>` achou 4 menções com quem/card/trecho.
 
 ### Limites conhecidos
 
@@ -1168,10 +1168,10 @@ dadas ao vivo contra a ata.
 
 **Medido em 22/10/2026.**
 - **Filtro nos dois `ao-vivo.md` reais** (só leitura, sem Claude, simulando a leitura no tempo da reunião):
-  19/10 com o Valter (4h47, 4.240 falas): na 1ª versão do filtro, **217 gatilhos**, 133 "perguntas" — a
+  19/10 com o cliente (4h47, 4.240 falas): na 1ª versão do filtro, **217 gatilhos**, 133 "perguntas" — a
   maioria "você entendeu?"; com o tique, a porcentagem sozinha, "toda hora" e a pergunta retórica fora:
   **127** (68 valor, 55 pergunta, 4 projeto). Com teto 20 e intervalo 45 s, **o teto acaba em ~1h58** (18
-  perguntas, 2 valores). 21/10 com o Mauro (55 min, 227 falas): **6 gatilhos, 2 chamadas**.
+  perguntas, 2 valores). 21/10 com o gestor (55 min, 227 falas): **6 gatilhos, 2 chamadas**.
 - **Claude real** (falas sintéticas, `claude_modelo` padrão = Opus): "Pedro, quanto ficou combinado de pagar
   quando o app entrar na loja?" → "R$ 450 pela publicação … + R$ 150 da Tex quando a 1.5.0 entrar na loja",
   fonte `memory/iot-ihm-portatil-valter.md` (conferida), **9,6 s, US$ 0,14**; "o sistema da retífica tem fila
@@ -1184,7 +1184,7 @@ dadas ao vivo contra a ata.
 **Limites conhecidos.**
 - **Não usado numa reunião real ainda.** O filtro foi medido em transcrição real, mas o que é "útil" só o Pedro
   diz: calibrar teto, intervalo e gatilhos com o `intervencoes.jsonl` das primeiras reuniões.
-- Numa reunião longa e conversada como a de 19/10, o teto de 20 acaba antes da metade; perguntas do Valter
+- Numa reunião longa e conversada como a de 19/10, o teto de 20 acaba antes da metade; perguntas do cliente
   dominam. Subir o teto custa cota; filtrar mais pode perder a pergunta que importa.
 - Atraso de 40–60 s: serve para "já que você perguntou, deixa eu ver…", não para resposta instantânea.
 - Heurística de "você": pergunta seguida de outra fala do Participante não dispara, mesmo que fosse com ele;

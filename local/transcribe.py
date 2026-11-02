@@ -36,7 +36,10 @@ import time
 _BASE = pathlib.Path(__file__).parent
 _DIAR_PY = pathlib.Path(r"C:\Users\olive\.venvs\diar\Scripts\python.exe")
 _DIAR_SCRIPT = _BASE / "diarize.py"
-_VOCAB = _BASE / "vocabulario.json"
+# O vocabulário real (nomes de pessoas, clientes e produtos) fica fora do git, em
+# vocabulario.local.json. O vocabulario.json versionado é só um exemplo do formato.
+_VOCAB_LOCAL = _BASE / "vocabulario.local.json"
+_VOCAB = _VOCAB_LOCAL if _VOCAB_LOCAL.exists() else _BASE / "vocabulario.json"
 
 _MODELOS = {}
 _CUDA_PRONTO = False

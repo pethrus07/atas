@@ -1,5 +1,6 @@
 # Segredos e config local
 local/config.json
+local/vocabulario.local.json
 
 # Áudio transitório e backups locais de reuniões (dados de cliente / LGPD)
 local/out/

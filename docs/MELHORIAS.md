@@ -2,7 +2,7 @@
 
 Backlog do sistema. Cada item diz o que aconteceu, onde, e o que precisa mudar. A ordem é
 de prioridade. Fonte: a primeira reunião longa real da v2 (05/10/2026, 3h09, alinhamento com o
-Valter, sessão `2026-10-05_2303_alinhamento-valter`), conferida item a item contra a transcrição.
+cliente, sessão `2026-10-05_2303_alinhamento-cliente`), conferida item a item contra a transcrição.
 
 ## Status em 06/10/2026 · tudo no `main` (`21d5bdd` v2.1, `51c602c` v2.2, `6ba25d1` voz)
 
@@ -41,7 +41,7 @@ Medido na reunião de 05/10 com a v2.1: ritmo **193 pal/min** (meta 130–180), 
 ### 1. Editar a ata publicava a página do cliente sozinho · ✅ **corrigido e com teste (v2.1)**
 `atas.py render`, `falantes` e `confirmar` chamavam `pipeline.reaplicar(publicar_=not sem_publicar)`,
 ou seja, `True`, que é **pedido explícito** de publicação. Em 06/10 o `render` tentou publicar a
-ata do Valter; só não saiu porque o Worker v2 não está no ar (HTTP 404). Corrigido em
+ata do cliente; só não saiu porque o Worker v2 não está no ar (HTTP 404). Corrigido em
 `local/atas.py::_reaplicar` para `False if sem_publicar else None` (só atualiza a página se ela
 **já** estiver no ar), igual ao `processar`. O teste de regressão está em `tests/test_v21.py`.
 
@@ -81,7 +81,7 @@ Toda reunião de negociação ou cliente deve sair com uma **parte interna**, nu
 - **Postura:** o que funcionou e o que trabalhar, com os números do Raio-X.
 - **O que corrigir com o cliente:** promessas erradas que ele vai testar.
 
-Modelo pronto: `atas-salvas/2026-10-05_2303_alinhamento-valter/avaliacao-interna.md`.
+Modelo pronto: `atas-salvas/2026-10-05_2303_alinhamento-cliente/avaliacao-interna.md`.
 Como a conferência exige cruzar com código e memória, ela é trabalho do **/ata** (Claude Code com
 acesso aos repositórios), não do `estruturar.py`. O /ata deve oferecer a avaliação sempre que o
 tipo for `cliente` ou `parresia`.
@@ -114,7 +114,7 @@ lacuna por padrão; só o prazo de encaminhamento com dono.
   só `projeto` (vazio). O resumo para o cliente que o Pedro prometeu é **por tema**.
 
 ### 10. Transcrição do áudio da chamada com trechos "Palavra Por Palavra"
-Entre 1:47:28 e 1:57:00 (o Valter compartilhando tela e mexendo em loja) o turbo devolveu falas
+Entre 1:47:28 e 1:57:00 (o cliente compartilhando tela e mexendo em loja) o turbo devolveu falas
 com cada palavra em maiúscula e quebrada ("Ele Ter Um Site Já Que Descreve…"). Investigar se é o
 vocabulário (hotwords) num trecho de áudio ruim, e marcar trecho de baixa confiança.
 **✅ 22/10/2026 — medido numa cópia da sessão (a original conferida por hash, intacta).** A hipótese das
@@ -178,7 +178,7 @@ Pedido do Pedro ("gosto do modo treino para reunião"). Janela: link "Treinar" �
 
 ## 21. Daily da Parresia (19/10/2026) · ✅ · ⏳ não calibrado
 Pedido do Pedro: dailies de >1 h com 7+ pessoas, rodada pelo nome, ele fala pouco (09/10: 8,9%); quer achar
-quem disse o quê sobre qual card (o SUP-953 do Rogério se perdeu numa daily não gravada) sem digitar nomes, e
+quem disse o quê sobre qual card (o SUP-953 de um colega se perdeu numa daily não gravada) sem digitar nomes, e
 tem duas dailies seguidas. Feito: `formato daily` (formato por tipo), fora de toda medição com trava no ponto
 de escrita (`sessao.fora_da_medicao`), ata `atas/daily@1`, teto próprio da diarização + rodada como pista,
 "Gravar a próxima daily", `atas.py daily`, `formato <id> daily` para reunião já medida, `/ata` com roteiro
@@ -207,6 +207,6 @@ Sinapse, repos, atas) com resposta de até 2 linhas e fonte, ou "não sei" (só 
 `intervencoes.jsonl` na pasta da sessão, que o `/ata` lê. Medidas, regras e limites em `ARQUITETURA.md` §22.
 **Pendente:**
 - **Primeira reunião real** com ele ligado: ler o `intervencoes.jsonl` com o Pedro e calibrar o que foi útil.
-- **Teto**: no ao vivo de 19/10 (4h47 com o Valter) o filtro acharia 127 gatilhos e o teto de 20 acabaria em
+- **Teto**: no ao vivo de 19/10 (4h47 com o cliente) o filtro acharia 127 gatilhos e o teto de 20 acabaria em
   ~1h58. Decidir com o uso se sobe o teto, aperta o filtro ou reserva chamadas para pergunta.
 - Atraso medido de ~40–60 s da fala ao cartão (janela do ao vivo + 7–10 s do Claude).

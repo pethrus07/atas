@@ -57,7 +57,7 @@ Só Windows, com GPU NVIDIA para a transcrição rápida (sem GPU funciona, mais
    `nvidia-cublas-cu12` e `nvidia-cudnn-cu12==9.*`.
 2. Venv da diarização (Python 3.12): `sherpa-onnx numpy`, com os modelos ONNX (~35 MB) em `local/models/diar/`.
 3. Claude Code instalado.
-4. Copie `local/config.example.json` para `local/config.json`. Nenhuma chave é obrigatória para gravar.
+4. Copie `local/config.example.json` para `local/config.json`. Nenhuma chave é obrigatória para gravar. Se quiser, copie `local/vocabulario.json` (um exemplo) para `local/vocabulario.local.json` e ponha os seus nomes e termos para o Whisper.
 5. Rode `python local/app.py` (janela) ou `python local/atas.py --help` (linha de comando).
 
 O manual do dia a dia (daily, marcar momento, intervencionista, reunião gravada no celular, modo treino) está
@@ -86,7 +86,7 @@ assets/      ícone
 ```
 
 Fora do git: `atas-salvas/` (uma pasta por reunião, com áudio e transcrição), `fala-analise/`, `local/config.json`,
-`local/out/`, `local/models/`.
+`local/vocabulario.local.json`, `local/out/`, `local/models/`.
 
 ## Arquitetura
 
@@ -104,4 +104,4 @@ Fora do git: `atas-salvas/` (uma pasta por reunião, com áudio e transcrição)
 
 ## Licença
 
-Todos os direitos reservados.
+MIT. Veja [LICENSE](LICENSE).

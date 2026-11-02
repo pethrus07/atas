@@ -23,7 +23,7 @@ Invoke-Expression "$A mostrar ultima"
    para a próxima.
 2. **ClickUp só pelos wrappers com o token dele** em `~/Projetos/qa-parresia/scripts`
    (ex.: `clickup-comentar.sh`; comentário é Quill Delta, nunca Markdown — modelo em
-   `cliente-comentar-sup689.py`). **Nunca** pelo MCP, que escreve como o Otávio.
+   `cliente-comentar-sup689.py`). **Nunca** pelo MCP, que escreve como o coordenador.
 3. **Operação da Parresia fica fora do Sinapse.** Tipo `parresia` não gera nota no vault;
    só `carreira` (a trajetória do Pedro) entra lá, em `08-CRESCIMENTO`.
 4. **Só as falas de "Você" são do Pedro.** "Participante N" é o áudio da chamada, e a
@@ -172,7 +172,7 @@ Nesta ordem, e **só isto** (pule os passos 3, 4, 4b, 4c, 4d e a tabela do passo
   5. **O que corrigir com o cliente.**
 - Releia os números antes de entregar. Apresente a avaliação no chat (ele quer ler ali); o
   arquivo fica como registro.
-- Modelo: `atas-salvas/2026-10-05_2303_alinhamento-valter/avaliacao-interna.md`.
+- Modelo: `atas-salvas/2026-10-05_2303_alinhamento-cliente/avaliacao-interna.md`.
 
 ### 4d. Raio-X da Fala
 - `atas.py fala <id>` recalcula e abre o painel: fatia de fala, confirmações/min,
@@ -210,7 +210,7 @@ Nesta ordem, e **só isto** (pule os passos 3, 4, 4b, 4c, 4d e a tabela do passo
 
 ## Perguntas sobre reuniões passadas
 
-"O que ficou decidido com o Mauro sobre X?" →
+"O que ficou decidido com o gestor sobre X?" →
 `buscar X --pessoa Mauro` (procura nas decisões/encaminhamentos e, se não achar, na
 transcrição), depois `mostrar <id>` da mais relevante. Responda com data, quem e o
 timestamp; se a fonte for só a transcrição (não um item da ata), diga isso.

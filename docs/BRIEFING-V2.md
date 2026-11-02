@@ -13,7 +13,7 @@
 ## 1 · Por que agora
 
 - **A conversa mais importante do mês se perdeu.** ~20/09/2026 o Pedro gravou a conversa com o
-  Mauro (CEO da Parresia) sobre a ida dele para PO; o PC travou no meio e **não sobrou nada**:
+  gestor sobre uma mudança de função; o PC travou no meio e **não sobrou nada**:
   `record.py` acumula o áudio em memória e só escreve `mic.wav`/`loopback.wav` no fim, e
   `local/out/` estava vazio. Reunião importante não pode depender de o processo terminar bem.
 - **Como PO, reunião vira o principal insumo de trabalho.** Decisão, encaminhamento com dono e
@@ -57,7 +57,7 @@
   de participantes quando o Pedro informar.
 - **Nomear os falantes**: mapear "Participante 1/2" → nome (informado no início ou deduzido do
   texto e confirmado) — sem isso a ata não atribui tarefa com segurança.
-- **Vocabulário do contexto** no `initial_prompt`/hotwords do Whisper (Orbe, Lumen, Vértice,
+- **Vocabulário do contexto** no `initial_prompt`/hotwords do Whisper (produtos e clientes,
   SUP-###, nomes do time, termos de produto).
 - **Avaliar GPU (CUDA) e modelo maior** (`medium`/`large-v3-turbo`) — medir WER e tempo nas atas
   existentes antes de trocar.
@@ -81,7 +81,7 @@ lacuna a fechar, não como dado.
   3. **propõe** cards/comentários de ClickUp — **nunca publica** sem OK explícito na hora;
   4. mostra o que mudou desde a última reunião do mesmo assunto.
 - **Índice pesquisável** das atas (por pessoa, projeto, decisão) para o Claude responder
-  "o que ficou decidido com o Mauro sobre X?".
+  "o que ficou decidido com o gestor sobre X?".
 
 ### R5 · Integração com o Sinapse (respeitando as regras do vault)
 - O Sinapse recebe **conhecimento e decisão**, não número operacional nem conteúdo de cliente.

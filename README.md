@@ -57,7 +57,7 @@ Windows only, with an NVIDIA GPU for fast transcription (it works without one, j
    `nvidia-cublas-cu12` and `nvidia-cudnn-cu12==9.*`.
 2. Diarization venv (Python 3.12): `sherpa-onnx numpy`, with the ONNX models (~35 MB) in `local/models/diar/`.
 3. Claude Code installed.
-4. Copy `local/config.example.json` to `local/config.json`. No key is needed to record.
+4. Copy `local/config.example.json` to `local/config.json`. No key is needed to record. Optionally copy `local/vocabulario.json` (an example) to `local/vocabulario.local.json` and fill in your own names and terms for Whisper.
 5. Run `python local/app.py` (window) or `python local/atas.py --help` (command line).
 
 The day-to-day manual (daily stand-up, marking a moment, interventionist mode, meetings recorded on a phone,
@@ -86,7 +86,7 @@ assets/      icon
 ```
 
 Kept out of git: `atas-salvas/` (one folder per meeting, with audio and transcript), `fala-analise/`,
-`local/config.json`, `local/out/`, `local/models/`.
+`local/config.json`, `local/vocabulario.local.json`, `local/out/`, `local/models/`.
 
 ## Architecture
 
@@ -106,4 +106,4 @@ Kept out of git: `atas-salvas/` (one folder per meeting, with audio and transcri
 
 ## License
 
-All rights reserved.
+MIT. See [LICENSE](LICENSE).
