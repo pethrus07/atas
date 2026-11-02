@@ -10,7 +10,8 @@ Worker), mas desde 22/10/2026 a publicação não é usada: tudo fica local (ver
 
 ## Onde está a arquitetura
 
-- `README.md` — uso diário, CLI, testes, montar do zero.
+- `README.md` (inglês) e `README.pt-BR.md`: visão geral, stack, testes, montar do zero.
+- `docs/USO.md` — manual do dia a dia (daily, marcar, intervencionista, celular, treino, CLI).
 - `docs/ARQUITETURA.md` — fonte da verdade: pipeline (§4), venvs (§5), falantes (§6), ata (§7),
   dados e retenção (§8), Worker (§10), **receitas (§11)**, /ata (§12), **armadilhas (§14)**,
   Raio-X calibrado (§17), celular (§18), modo treino (§19), marcar momento (§20), daily (§21),
@@ -22,15 +23,15 @@ Worker), mas desde 22/10/2026 a publicação não é usada: tudo fica local (ver
 ## Rodar e testar (sempre com o Python do venv, nunca o do PATH)
 
 ```powershell
-# testes Python — README.md:61, tests/conftest.py:4
+# testes Python — tests/conftest.py:4
 C:\Users\olive\.venvs\faster-whisper\Scripts\python.exe -m pytest tests -q
 # pular os lentos (Whisper/Chrome/dispositivo real) — tests/conftest.py:5
 C:\Users\olive\.venvs\faster-whisper\Scripts\python.exe -m pytest tests -q -m "not lento"
-# testes do Worker (Miniflare) — README.md:62, worker/package.json:7
+# testes do Worker (Miniflare) — worker/package.json:7
 cd worker; npm test
 ```
 
-CLI (README.md:51-57):
+CLI (docs/USO.md, "Linha de comando"):
 
 ```powershell
 $A = "C:\Users\olive\.venvs\faster-whisper\Scripts\python.exe C:\Users\olive\Projetos\atas\local\atas.py"

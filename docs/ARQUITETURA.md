@@ -5,7 +5,7 @@
 > ambientes Python, o que fica fora do git, os números medidos e o que quebra quando se
 > esquece de um detalhe. A v1 (jul–set/2026) está no histórico do git e em §15.
 >
-> O manual do dia a dia é o [README.md](../README.md). O contrato da v2 é
+> O manual do dia a dia é o [USO.md](USO.md). O contrato da v2 é
 > [BRIEFING-V2.md](BRIEFING-V2.md).
 
 ---
@@ -429,7 +429,7 @@ abrir uma ata antiga em `/r/<id>` e uma nova.
 mostra o plano — apagar as internas (hoje 4: Parresia e pessoal); senha nova + 90 dias para as
 de cliente (22) — e só executa com `--aplicar`. As senhas novas ficam no `sessao.json` de cada uma.
 
-**Montar numa máquina nova.** README, seção "Montar do zero".
+**Montar numa máquina nova.** [USO.md](USO.md), seção "Montar do zero".
 
 ---
 

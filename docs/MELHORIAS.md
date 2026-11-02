@@ -195,7 +195,7 @@ curto (passo 1e). Detalhe, números e limites em `ARQUITETURA.md` §21.
 - A diarização da daily roda na CPU: ~835 s para 46 min de áudio (09/10), ou seja ~18 min a mais numa daily de
   1 h antes da ata sair.
 
-## 22. Ao vivo intervencionista (pedido de 21/10, feito em 22/10/2026) · ✅ · ⏳ não usado numa reunião real
+## 22. Ao vivo intervencionista (pedido de 21/10, feito em 22/10/2026) · ✅ · ⏳ não calibrado (não usado numa reunião real)
 Feedback do Pedro depois de usar o ao vivo numa reunião, com o Claude lendo `ao-vivo.md` pelo chat: "muito muito
 bom". O pedido: um modo que fica ouvindo o tempo todo e traz a resposta **sem ele pedir**. Decidido em 21/10: o
 Pedro liga reunião a reunião, desligado por padrão, em qualquer tipo.
