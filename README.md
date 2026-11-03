@@ -21,16 +21,7 @@ Important meetings fade from memory within days. Taking notes during a call pull
 conversation, and a summary written afterwards mixes what was said with what was remembered. Ágora records,
 transcribes, and only keeps what it can quote.
 
-## Stack
-
-- Python 3.14: `tkinter` (window), `soundcard` and `sounddevice` (microphone and call audio capture),
-  `faster-whisper` large-v3-turbo on the GPU (CUDA), `av`/ffmpeg (Opus), `numpy`.
-- Python 3.12 in a separate venv: `sherpa-onnx` for speaker separation (diarization).
-- Claude Code (`claude -p`) to turn the transcript into minutes, with a quote audit.
-- Headless Chrome for the PDF.
-- Cloudflare Worker + D1 (`worker/`), unused since 2026-10-22.
-
-## How it works
+## What it does
 
 ```
 [Windows machine, everything local]
@@ -49,7 +40,16 @@ transcribes, and only keeps what it can quote.
 
 If the PC freezes, the recording loses at most the last ~5 s: audio goes to disk in chunks.
 
-## Running locally
+## Stack
+
+- Python 3.14: `tkinter` (window), `soundcard` and `sounddevice` (microphone and call audio capture),
+  `faster-whisper` large-v3-turbo on the GPU (CUDA), `av`/ffmpeg (Opus), `numpy`.
+- Python 3.12 in a separate venv: `sherpa-onnx` for speaker separation (diarization).
+- Claude Code (`claude -p`) to turn the transcript into minutes, with a quote audit.
+- Headless Chrome for the PDF.
+- Cloudflare Worker + D1 (`worker/`), unused since 2026-10-22.
+
+## Run locally
 
 Windows only, with an NVIDIA GPU for fast transcription (it works without one, just slower).
 
@@ -74,7 +74,7 @@ cd worker && npm test                      # 10 Worker tests (Miniflare)
 The 2 tests in `tests/test_dispositivos_reais.py` need a real microphone and audio output. The audio fixtures
 (`tests/fixtures/*.opus`) are synthetic voices (SAPI), not recordings of people.
 
-## Layout
+## Folders
 
 ```
 local/       app, CLI and the pipeline (record, transcribe, separate voices, structure, render)

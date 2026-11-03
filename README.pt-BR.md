@@ -21,16 +21,7 @@ Reunião importante some da memória em dias. Anotar à mão durante a chamada t
 resumo feito depois mistura o que foi dito com o que se lembra. O Ágora grava, transcreve e só registra o
 que tem citação.
 
-## Stack
-
-- Python 3.14: `tkinter` (janela), `soundcard` e `sounddevice` (captura do microfone e do áudio da chamada),
-  `faster-whisper` large-v3-turbo na GPU (CUDA), `av`/ffmpeg (Opus), `numpy`.
-- Python 3.12 num venv separado: `sherpa-onnx` para separar as vozes (diarização).
-- Claude Code (`claude -p`) para estruturar a ata a partir da transcrição, com auditoria das citações.
-- Chrome headless para o PDF.
-- Cloudflare Worker + D1 (`worker/`), sem uso desde 22/10/2026.
-
-## Como funciona
+## O que faz
 
 ```
 [máquina Windows, tudo local]
@@ -48,6 +39,15 @@ que tem citação.
 ```
 
 Se o PC travar, a gravação perde no máximo os últimos ~5 s: o áudio vai para o disco em blocos.
+
+## Stack
+
+- Python 3.14: `tkinter` (janela), `soundcard` e `sounddevice` (captura do microfone e do áudio da chamada),
+  `faster-whisper` large-v3-turbo na GPU (CUDA), `av`/ffmpeg (Opus), `numpy`.
+- Python 3.12 num venv separado: `sherpa-onnx` para separar as vozes (diarização).
+- Claude Code (`claude -p`) para estruturar a ata a partir da transcrição, com auditoria das citações.
+- Chrome headless para o PDF.
+- Cloudflare Worker + D1 (`worker/`), sem uso desde 22/10/2026.
 
 ## Rodar localmente
 
@@ -74,7 +74,7 @@ cd worker && npm test                      # 10 testes do Worker (Miniflare)
 Os 2 testes de `tests/test_dispositivos_reais.py` precisam de microfone e saída de áudio de verdade. As
 fixtures de áudio (`tests/fixtures/*.opus`) são vozes sintéticas (SAPI), não gravações de pessoas.
 
-## Estrutura
+## Pastas
 
 ```
 local/       app, CLI e o pipeline (gravar, transcrever, separar vozes, estruturar, renderizar)
