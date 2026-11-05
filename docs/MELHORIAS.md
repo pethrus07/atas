@@ -207,6 +207,7 @@ Sinapse, repos, atas) com resposta de até 2 linhas e fonte, ou "não sei" (só 
 `intervencoes.jsonl` na pasta da sessão, que o `/ata` lê. Medidas, regras e limites em `ARQUITETURA.md` §22.
 **Pendente:**
 - **Primeira reunião real** com ele ligado: ler o `intervencoes.jsonl` com o Pedro e calibrar o que foi útil.
+- **04/11/2026, 23:01 (acompanhamento Valdir), primeiro uso real:** o Pedro achou interessante o formato em cartão; "revemos o ideal depois". Calibrar com o `intervencoes.jsonl` dessa sessão.
 - **Teto**: no ao vivo de 19/10 (4h47 com o cliente) o filtro acharia 127 gatilhos e o teto de 20 acabaria em
   ~1h58. Decidir com o uso se sobe o teto, aperta o filtro ou reserva chamadas para pergunta.
 - Atraso medido de ~40–60 s da fala ao cartão (janela do ao vivo + 7–10 s do Claude).
