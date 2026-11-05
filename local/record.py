@@ -239,9 +239,21 @@ def _escolher_mic(preferido=None):
     raise RuntimeError("Nenhum microfone do sistema pôde ser aberto.")
 
 
-def _escolher_loop():
-    """Loopback da saída padrão; se não abrir, o primeiro loopback que abre.
-    Devolve (loopback|None, aviso). None = grava só a sua voz (melhor que nada)."""
+def _aparelho(nome):
+    """O aparelho físico pelo nome do Windows: "Microphone (AB13X USB Audio)" -> "ab13x usb audio".
+    O microfone e a saída do mesmo fone trazem o mesmo nome entre parênteses."""
+    n = (nome or "").strip()
+    if "(" in n and n.endswith(")"):
+        n = n[n.index("(") + 1:-1]
+    return n.strip().lower()
+
+
+def _escolher_loop(mic_nome=None):
+    """Loopback de onde a chamada TOCA. Se o microfone é um fone externo (USB/Bluetooth), a chamada
+    toca nesse mesmo fone: grava a saída dele, mesmo que a saída padrão do Windows seja outra.
+    Achado de 05/11/2026: a daily gravou o alto-falante Realtek (padrão do Windows) enquanto o Meet
+    tocava no fone AB13X, e a ata saiu só com a voz do Pedro. Sem fone externo: saída padrão; se não
+    abrir, o primeiro loopback que abre. Devolve (loopback|None, aviso). None = só a sua voz."""
     with com_na_thread():
         spk = sc.default_speaker()
         try:
@@ -249,6 +261,15 @@ def _escolher_loop():
         except Exception:
             loop = None
         todos = [m for m in sc.all_microphones(include_loopback=True) if m.isloopback]
+    if mic_nome and not _e_interno(mic_nome):
+        do_fone = [m for m in todos if _aparelho(m.name) == _aparelho(mic_nome)]
+        for m in do_fone:
+            if _abre(m):
+                aviso = None
+                if loop is None or _aparelho(m.name) != _aparelho(loop.name):
+                    aviso = (f"a chamada é gravada pelo fone ({m.name}), não pela saída padrão "
+                             f"do Windows ({spk.name})")
+                return m, aviso
     if loop is not None and _abre(loop):
         return loop, None
     for m in todos:
@@ -261,7 +282,7 @@ def _escolher_loop():
 
 def escolher_dispositivos(mic_preferido=None):
     mic, aviso_mic = _escolher_mic(mic_preferido)
-    loop, aviso_loop = _escolher_loop()
+    loop, aviso_loop = _escolher_loop(mic.name if mic else None)
     return {"mic": mic, "loop": loop, "avisos": [a for a in (aviso_mic, aviso_loop) if a]}
 
 
@@ -420,7 +441,7 @@ class Gravador:
                                        reescolher=lambda n=mic.name: _escolher_mic(n)[0])
         if loop is not None:
             self.canais["loop"] = Canal("loop", loop, self.s.loop_pcm, self.t0,
-                                        reescolher=lambda: _escolher_loop()[0])
+                                        reescolher=lambda n=(mic.name if mic else None): _escolher_loop(n)[0])
         for c in self.canais.values():
             c.start()
 

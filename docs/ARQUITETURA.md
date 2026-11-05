@@ -478,6 +478,11 @@ filtro sem IA acha algo, chama o Claude sozinha e mostra a resposta num cartão.
   `account_id` fixado, então um deploy com o login errado **falha** (erro 10000) em vez de ir
   para a conta errada. `eventos`, `minidrive`, `mesa-arton` e `bailado-da-sanfona` **não têm**
   `account_id` fixado.
+- **A chamada toca no fone, não na saída padrão do Windows.** Em 05/11/2026 a daily gravou o
+  alto-falante Realtek (padrão do Windows) enquanto o Meet tocava no fone AB13X, e a ata saiu só com
+  a voz do Pedro. Desde então `_escolher_loop` grava a saída do MESMO aparelho do microfone quando o
+  microfone é externo (nome entre parênteses igual), com aviso; só cai para a saída padrão se a do
+  fone não abrir (`tests/test_loop_do_fone.py`).
 - **O turbo com vocabulário junta trechos** (§5). Não tire o `word_timestamps`.
 - **Não ligue o `condition_on_previous_text`** (`whisper_condicionar`): numa reunião longa o "Palavra Por
   Palavra" começa num ponto aleatório e não sai mais (§5, medido em 22/10 na reunião de 05/10).
