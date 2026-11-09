@@ -25,7 +25,9 @@ Invoke-Expression "$A mostrar ultima"
    (ex.: `clickup-comentar.sh`; comentário é Quill Delta, nunca Markdown — modelo em
    `cliente-comentar-sup689.py`). **Nunca** pelo MCP, que escreve como o coordenador.
 3. **Operação da Parresia fica fora do Sinapse.** Tipo `parresia` não gera nota no vault;
-   só `carreira` (a trajetória do Pedro) entra lá, em `08-CRESCIMENTO`.
+   só `carreira` (a trajetória do Pedro) entra lá, em `08-CRESCIMENTO`. Exceção desde
+   03/11/2026: o que sai de uma **daily** vai para o canal (`04-NEGOCIO/canal-parresia.md`),
+   pelo fluxo da skill `/parresia` (demanda na fila, decisão no registro).
 4. **Só as falas de "Você" são do Pedro.** "Participante N" é o áudio da chamada, e a
    separação de vozes erra: um rótulo pode ser várias pessoas, e várias pessoas um rótulo.
    Tarefa sem dono confirmado não vira tarefa do Pedro.
