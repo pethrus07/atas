@@ -489,3 +489,14 @@ def buscar(ata, segs, termo, pessoa=None, frente=None):
                             "verificado": None})
     out.sort(key=lambda x: _ata.parse_t(x.get("t")) or 0)
     return out
+
+
+def mensagem_de_espera(formato, duracao_min=None):
+    """O que a janela "Gerando a ata" mostra enquanto espera (09/11/2026, pedido do Pedro): na daily a
+    ata leva uns 30 min (transcrição + vozes na CPU; medido 18 min para 41 min e 31 min para 64 min),
+    então em vez de ficar olhando a barra, ele levanta e alonga. Fora da daily não há mensagem."""
+    if formato != "daily":
+        return None
+    est = max(10, round((duracao_min or 40) * 0.5))
+    return (f"A daily leva uns {est} min para virar ata. Aproveita: levanta, alonga pescoço, ombros, "
+            "punhos e costas, e bebe um copo de água. O aviso chega quando terminar.")

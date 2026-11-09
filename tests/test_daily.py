@@ -443,3 +443,12 @@ def test_rodada_que_discorda_do_nome_deduzido_vira_lacuna(raiz):
     b["falantes"][0]["nome"] = "Augusto"                  # o texto diz Augusto, a rodada diz Rogério
     a = daily.montar(_daily(raiz), segs_daily(), b, {}, "Pedro", dict(CFG))
     assert any(l["ref"] == "Participante 2" and "a rodada aponta Rogério" in l["falta"] for l in a["lacunas"])
+
+
+def test_mensagem_de_espera_so_na_daily_e_manda_alongar():
+    m = daily.mensagem_de_espera("daily", 64)
+    assert "alonga" in m and "32 min" in m
+    assert "10 min" in daily.mensagem_de_espera("daily", 4), "piso de 10 min"
+    assert "20 min" in daily.mensagem_de_espera("daily", None), "sem duração assume 40 min"
+    assert daily.mensagem_de_espera("reunião", 64) is None
+    assert daily.mensagem_de_espera(None, 64) is None

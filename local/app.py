@@ -651,6 +651,11 @@ class App(tk.Tk):
         ttk.Label(f, text="Gerando a ata", style="T.TLabel").pack(anchor="w")
         ttk.Label(f, text=f"{s.m.get('titulo')} · {round(s.duracao_s() / 60)} min",
                   style="Sub.TLabel", wraplength=_p(370)).pack(anchor="w", pady=(0, _p(20)))
+        # daily: a ata demora ~30 min; a janela manda o Pedro alongar enquanto espera (09/11/2026)
+        import daily as _daily
+        espera = _daily.mensagem_de_espera(s.m.get("formato"), round(s.duracao_s() / 60))
+        if espera:
+            ttk.Label(f, text=espera, style="T.TLabel", wraplength=_p(370)).pack(anchor="w", pady=(0, _p(12)))
         self.l_msg = ttk.Label(f, text="Começando…", style="Sub.TLabel", wraplength=_p(370))
         self.l_msg.pack(anchor="w")
         barra = ttk.Progressbar(f, mode="indeterminate")
